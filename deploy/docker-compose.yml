@@ -12,6 +12,12 @@ services:
       RUST_LOG: info,serenity=warn
     volumes:
       - ./data:/app/data
+    # Durcissement : seul data/ est inscriptible, aucune capability, pas d'élévation.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Fichiers temporaires éventuels de SQLite.
+    tmpfs: [/tmp]
     # Laisse le temps de se déconnecter proprement de Discord (SIGTERM).
     stop_grace_period: 20s
     logging:
