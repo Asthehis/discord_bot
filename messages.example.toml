@@ -1,0 +1,131 @@
+# Textes du bot. Placeholders remplacés à l'envoi : {user}, {channel}, {rules}, {roles}.
+# Chaque langue de config.toml doit avoir sa section [lang.<key>], plus [lang.en].
+
+[common]
+recap_title = "Verification request"
+field_name = "In-game name"
+field_alliance = "Alliance"
+field_kingdom = "Kingdom"
+field_language = "Language"
+button_verified = "Verified"
+button_guest = "Guest"
+button_refuse = "Refuse"
+mod_only = "Only moderators can use these buttons."
+member_left = "This member is no longer on the server."
+action_failed = "Action failed, check the bot's permissions and role position."
+setup_done = "Message posted."
+roles_title = "🌐 Languages"
+roles_description = "Pick the language(s) you speak to unlock the matching channels. You can change your choice at any time."
+roles_button = "Choose my languages"
+roles_placeholder = "Select your language(s)"
+roles_updated = "✅ Your languages: {languages}"
+roles_none = "✅ No language selected."
+welcome = """
+🎉 Welcome {user}!
+
+📜 Please read the rules in {rules}
+
+**1️⃣ Register your account**
+Run `/register`, enter your Governor ID, then select your alliance. This done, you'll unlock auto-claim gift codes!
+
+**2️⃣ Pick your language**
+Head to {roles} and select your language(s) to unlock language channels.
+"""
+
+[gift]
+register_ok = "✅ ID `{id}` linked to your account (kingdom {kingdom}, {alliance}). Gift codes will now be claimed automatically for it!"
+register_list = "Your linked IDs:\n{list}"
+register_taken = "❌ ID `{id}` is already linked to another Discord account. Contact a moderator if this is a mistake."
+register_bad_alliance = "❌ Unknown alliance, pick one from the list."
+register_need_kingdom = "❌ Please fill in the `kingdom` option with your kingdom number."
+register_not_found = "❌ No player with ID `{id}` in kingdom {kingdom}. Check your ID and kingdom number."
+register_api_down = "⚠️ The game server didn't answer, please try again in a few minutes."
+unregister_ok = "✅ ID `{id}` unlinked from your account."
+unregister_not_yours = "❌ ID `{id}` isn't linked to your account."
+code_invalid = "❌ Code `{code}` is not usable ({reason})."
+code_summary_title = "🎁 Gift code {code}"
+code_summary = "✅ Redeemed: **{success}**\n↩️ Already claimed: **{already}**\n⚠️ Failed: **{failed}**"
+
+[lang.en]
+verif_title = "Welcome to the server!"
+verif_description = """
+To access the server, you need to be verified:
+
+**1.** Click **Start verification** below
+**2.** Enter your in-game name, alliance and kingdom
+**3.** A private channel opens, a moderator will review your request
+"""
+start_button = "Start verification"
+lang_placeholder = "🌐 Read in your language"
+modal_title = "Verification"
+modal_name = "In-game name"
+modal_alliance = "Alliance"
+modal_kingdom = "Kingdom (number)"
+invalid_name = "Your in-game name is invalid."
+invalid_kingdom = "The kingdom must be a number."
+pending_exists = "You already have a pending request: {channel}"
+request_created = "Your request has been created: {channel}"
+ticket_intro = "A moderator will review your request shortly. Please post a screenshot of your governor profile here."
+
+[lang.fr]
+verif_title = "Bienvenue sur le serveur !"
+verif_description = """
+Pour accéder au serveur, tu dois être vérifié :
+
+**1.** Clique sur **Commencer la vérification** ci-dessous
+**2.** Indique ton pseudo en jeu, ton alliance et ton royaume
+**3.** Un salon privé s'ouvre, un modérateur va examiner ta demande
+"""
+start_button = "Commencer la vérification"
+lang_placeholder = "🌐 Lire dans ta langue"
+modal_title = "Vérification"
+modal_name = "Pseudo en jeu"
+modal_alliance = "Alliance"
+modal_kingdom = "Royaume (numéro)"
+invalid_name = "Ton pseudo en jeu est invalide."
+invalid_kingdom = "Le royaume doit être un nombre."
+pending_exists = "Tu as déjà une demande en cours : {channel}"
+request_created = "Ta demande a été créée : {channel}"
+ticket_intro = "Un modérateur va examiner ta demande rapidement. Poste ici une capture d'écran de ton profil de gouverneur."
+
+[lang.ar]
+verif_title = "مرحبًا بك في السيرفر!"
+verif_description = """
+للوصول إلى السيرفر، يجب التحقق من حسابك:
+
+**1.** اضغط على **بدء التحقق** أدناه
+**2.** أدخل اسمك في اللعبة وتحالفك ومملكتك
+**3.** ستُفتح قناة خاصة، وسيقوم أحد المشرفين بمراجعة طلبك
+"""
+start_button = "بدء التحقق"
+lang_placeholder = "🌐 اقرأ بلغتك"
+modal_title = "التحقق"
+modal_name = "الاسم في اللعبة"
+modal_alliance = "التحالف"
+modal_kingdom = "المملكة (رقم)"
+invalid_name = "اسمك في اللعبة غير صالح."
+invalid_kingdom = "يجب أن تكون المملكة رقمًا."
+pending_exists = "لديك طلب قيد المراجعة بالفعل: {channel}"
+request_created = "تم إنشاء طلبك: {channel}"
+ticket_intro = "سيقوم أحد المشرفين بمراجعة طلبك قريبًا. يرجى نشر لقطة شاشة لملف الحاكم الخاص بك هنا."
+
+[lang.tr]
+verif_title = "Sunucuya hoş geldin!"
+verif_description = """
+Sunucuya erişmek için doğrulanman gerekiyor:
+
+**1.** Aşağıdaki **Doğrulamayı başlat** düğmesine tıkla
+**2.** Oyun içi adını, ittifakını ve krallığını gir
+**3.** Özel bir kanal açılır, bir moderatör talebini inceleyecek
+"""
+start_button = "Doğrulamayı başlat"
+lang_placeholder = "🌐 Kendi dilinde oku"
+modal_title = "Doğrulama"
+modal_name = "Oyun içi ad"
+modal_alliance = "İttifak"
+modal_kingdom = "Krallık (numara)"
+invalid_name = "Oyun içi adın geçersiz."
+invalid_kingdom = "Krallık bir sayı olmalıdır."
+pending_exists = "Zaten bekleyen bir talebin var: {channel}"
+request_created = "Talebin oluşturuldu: {channel}"
+ticket_intro = "Bir moderatör talebini kısa süre içinde inceleyecek. Lütfen vali profilinin ekran görüntüsünü buraya gönder."

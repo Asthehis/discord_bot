@@ -1,0 +1,9 @@
+target
+data
+import
+.env
+bot.env
+.git
+.github
+*.db*
+*.sqlite*

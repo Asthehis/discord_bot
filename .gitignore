@@ -1,0 +1,13 @@
+/target
+
+# Secrets et données : jamais dans git (repo public).
+.env
+bot.env
+/data/
+/import/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

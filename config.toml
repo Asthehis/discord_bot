@@ -1,0 +1,63 @@
+guild_id = 1538899491539779695
+verif_category = 1573352613959831634
+# Fichier SQLite (monter un PVC sur /data en prod).
+database_path = "data/bot.db"
+
+[roles]
+verified = 1556360528958459955
+guest = 1568930478399037450
+moderator = 1539260767885598841
+
+[channels]
+verification = 1556383640160698388
+general_chat = 1538902807422308474
+rules = 1538902179237200032
+roles = 1573352513153794240
+gift_codes = 1539605728212426792
+logs = 1573425158981689364
+
+[[languages]]
+key = "fr"
+label = "Français"
+role_id = 1551872022160875571
+emoji = "🇫🇷"
+
+[[languages]]
+key = "ar"
+label = "العربية"
+role_id = 1558007701051678811
+
+[[languages]]
+key = "tr"
+label = "Türkçe"
+role_id = 1557046555352240168
+emoji = "🇹🇷"
+
+[gift]
+# Clé de signature du site de réclamation (celle de la page web officielle).
+encrypt_key = "mN4!pQs6JrYwV9"
+
+# API communautaire de partage de codes, en lecture seule. Supprimer la section pour désactiver.
+[gift.share_api]
+url = "http://ks-gift-code-api.whiteout-bot.com/giftcode_api.php"
+key = "super_secret_bot_token_nobody_will_ever_find"
+
+[[alliances]]
+tag = "ACE"
+name = "Ascenders"
+
+[[alliances]]
+tag = "CEL"
+name = "Celestials"
+
+[[alliances]]
+tag = "SNO"
+name = "SNO"
+
+[[alliances]]
+tag = "CLT"
+name = "ChillTitans"
+
+[[alliances]]
+tag = "SMU"
+name = "AEGIS"

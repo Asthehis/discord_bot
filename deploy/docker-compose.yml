@@ -1,0 +1,21 @@
+# Copié sur la VM par la CI dans /opt/docker/discord-verif-bot/.
+# - .env      : BOT_IMAGE et BOT_VERSION (réécrit à chaque déploiement)
+# - bot.env   : DISCORD_TOKEN (créé à la main une fois, jamais commité)
+# - data/     : base SQLite (doit appartenir à l'uid 10001)
+services:
+  bot:
+    image: ${BOT_IMAGE:?}:${BOT_VERSION:?}
+    container_name: discord-verif-bot
+    restart: unless-stopped
+    env_file: bot.env
+    environment:
+      RUST_LOG: info,serenity=warn
+    volumes:
+      - ./data:/app/data
+    # Laisse le temps de se déconnecter proprement de Discord (SIGTERM).
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

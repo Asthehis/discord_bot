@@ -1,0 +1,17 @@
+[package]
+name = "discord-verif-bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+poise = "0.7.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+serde = { version = "1", features = ["derive"] }
+figment = { version = "0.10.19", features = ["toml", "env"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+reqwest = { version = "0.13.5", features = ["json", "form"] }
+md-5 = "0.11"
+regex = "1"

@@ -1,0 +1,100 @@
+name: deploy
+
+# Déploiement sur tag : git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+  # Relance manuelle (ex. revenir à une version précédente) depuis l'onglet Actions.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version déjà publiée à déployer (ex. 0.1.0)"
+        required: true
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: type=raw,value=${{ steps.v.outputs.version }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    # Tag poussé (après build) ou relance manuelle (sans rebuild).
+    if: always() && (needs.build.result == 'success' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Préparer SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Déployer
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          VERSION: ${{ needs.build.outputs.version || inputs.version }}
+        run: |
+          set -eu
+          IMAGE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          DIR=/opt/docker/discord-verif-bot
+          SSH="ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes ${USER}@${HOST}"
+          scp -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
+            deploy/docker-compose.yml "${USER}@${HOST}:${DIR}/docker-compose.yml"
+          $SSH "cd ${DIR} \
+            && printf 'BOT_IMAGE=%s\nBOT_VERSION=%s\n' '${IMAGE}' '${VERSION}' > .env \
+            && docker compose pull \
+            && docker compose up -d \
+            && sleep 10 \
+            && docker compose ps \
+            && docker compose logs --tail 20"

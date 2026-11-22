@@ -1,0 +1,52 @@
+guild_id = 0
+verif_category = 0
+# Fichier SQLite (monter un PVC sur /data en prod).
+database_path = "data/bot.db"
+
+[roles]
+verified = 0
+guest = 0
+moderator = 0
+
+[channels]
+verification = 0
+general_chat = 0
+rules = 0
+roles = 0
+gift_codes = 0
+# Copie des logs du bot (admins uniquement). Supprimer la ligne pour désactiver.
+logs = 0
+
+[[languages]]
+key = "fr"
+label = "Français"
+role_id = 0
+emoji = "🇫🇷"
+
+[[languages]]
+key = "ar"
+label = "العربية"
+role_id = 0
+
+[[languages]]
+key = "tr"
+label = "Türkçe"
+role_id = 0
+emoji = "🇹🇷"
+
+[gift]
+# Clé de signature du site de réclamation (celle de la page web officielle).
+encrypt_key = "mN4!pQs6JrYwV9"
+
+# API communautaire de partage de codes, en lecture seule. Supprimer la section pour désactiver.
+[gift.share_api]
+url = "http://ks-gift-code-api.whiteout-bot.com/giftcode_api.php"
+key = "super_secret_bot_token_nobody_will_ever_find"
+
+[[alliances]]
+tag = "ABC"
+name = "Alliance ABC"
+
+[[alliances]]
+tag = "XYZ"
+name = "Alliance XYZ"
