@@ -11,3 +11,5 @@ bot.env
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sql
+!/migrations/*.sql
