@@ -75,22 +75,36 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
+          missing=""
+          for name in SSH_KEY KNOWN_HOSTS DEPLOY_HOST DEPLOY_USER; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Secrets vides ou absents :$missing (Settings → Secrets and variables → Actions → Repository secrets)"
+            exit 1
+          fi
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          # Retire d'éventuels \r (copier-coller depuis Windows / certains navigateurs).
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh-keygen -y -f ~/.ssh/deploy > /dev/null \
+            || { echo "::error::DEPLOY_SSH_KEY n'est pas une clé privée valide (copier le fichier SANS .pub, en entier)"; exit 1; }
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
       - name: Déployer
         env:
-          HOST: ${{ secrets.DEPLOY_HOST }}
-          USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           VERSION: ${{ needs.build.outputs.version || inputs.version }}
         run: |
           set -eu
           IMAGE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
           DIR=/opt/docker/discord-verif-bot
-          SSH="ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes ${USER}@${HOST}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          SSH="ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes ${TARGET}"
           scp -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
-            deploy/docker-compose.yml "${USER}@${HOST}:${DIR}/docker-compose.yml"
+            deploy/docker-compose.yml "${TARGET}:${DIR}/docker-compose.yml"
           $SSH "cd ${DIR} \
             && printf 'BOT_IMAGE=%s\nBOT_VERSION=%s\n' '${IMAGE}' '${VERSION}' > .env \
             && docker compose pull \
