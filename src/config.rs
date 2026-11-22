@@ -25,6 +25,9 @@ pub struct Config {
     pub database_path: String,
     pub gift: Gift,
     pub alliances: Vec<Alliance>,
+    /// Serveurs où `/event` (rappels) est disponible ; peut inclure `guild_id`.
+    #[serde(default)]
+    pub reminder_guilds: Vec<GuildId>,
 }
 
 fn default_database_path() -> String {

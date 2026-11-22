@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod db;
 mod discord_log;
+mod events;
 mod gift;
 mod giftapi;
 mod import;
@@ -13,7 +14,7 @@ mod verification;
 
 use std::sync::Arc;
 
-use poise::serenity_prelude::{self as serenity, FullEvent, Interaction};
+use poise::serenity_prelude::{self as serenity, FullEvent, GuildId, Interaction};
 use tracing::{error, info};
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
@@ -53,7 +54,6 @@ async fn main() -> anyhow::Result<()> {
 
     let token = std::env::var("DISCORD_TOKEN").map_err(|_| anyhow::anyhow!("DISCORD_TOKEN absent"))?;
     let texts = Texts::load(&config)?;
-    let guild_id = config.guild_id;
     let db = db::connect(&config.database_path).await?;
     let gift_api = GiftApi::new(config.gift.encrypt_key.clone())?;
     let (jobs, jobs_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -66,17 +66,14 @@ async fn main() -> anyhow::Result<()> {
                 commands::setup_roles(),
                 register::register(),
                 register::unregister(),
+                events::event(),
             ],
-            event_handler: |fw, event| {
-                Box::pin(event_handler(fw.serenity_context, event, fw.user_data))
-            },
+            event_handler: |fw, event| Box::pin(event_handler(fw, event)),
             on_error: |err| Box::pin(on_error(err)),
             ..Default::default()
         })
-        .setup(move |ctx, ready, framework| {
+        .setup(move |ctx, ready, _framework| {
             Box::pin(async move {
-                poise::builtins::register_in_guild(ctx, &framework.options().commands, guild_id)
-                    .await?;
                 // Sans salon configuré, `log_rx` est abandonné et le layer ne fait plus rien.
                 if let Some(channel) = logs_channel {
                     discord_log::spawn_sender(ctx.http.clone(), channel, log_rx);
@@ -85,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
                 // Appelé une seule fois, au premier Ready.
                 gift::spawn_worker(ctx.http.clone(), data.clone(), jobs_rx);
                 gift::spawn_share_api_poller(data.clone());
+                events::spawn_scheduler(ctx.http.clone(), data.clone());
                 Ok(data)
             })
         })
@@ -112,11 +110,15 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn event_handler(
-    ctx: &serenity::Context,
+    fw: poise::FrameworkContext<'_, Data, Error>,
     event: &FullEvent,
-    data: &Data,
 ) -> Result<(), Error> {
+    let (ctx, data) = (fw.serenity_context, fw.user_data);
     match event {
+        // Reçu pour chaque serveur au démarrage et à chaque nouvelle invitation.
+        FullEvent::GuildCreate { guild, .. } => {
+            register_commands(ctx, data, &fw.options().commands, guild.id).await;
+        }
         FullEvent::InteractionCreate { interaction } => match interaction {
             Interaction::Component(i) => {
                 if verification::handles(&i.data.custom_id) {
@@ -143,6 +145,29 @@ async fn event_handler(
         _ => {}
     }
     Ok(())
+}
+
+/// Serveur principal : toutes les commandes sauf `/event` ; `reminder_guilds` : `/event`.
+async fn register_commands(
+    ctx: &serenity::Context,
+    data: &Data,
+    commands: &[poise::Command<Data, Error>],
+    guild: GuildId,
+) {
+    let main = guild == data.config.guild_id;
+    let reminders = data.config.reminder_guilds.contains(&guild);
+    if !main && !reminders {
+        return;
+    }
+    let list: Vec<_> = commands
+        .iter()
+        .filter(|c| if c.name == events::COMMAND { reminders } else { main })
+        .filter_map(|c| c.create_as_slash_command())
+        .collect();
+    match guild.set_commands(&ctx.http, list).await {
+        Ok(cmds) => info!(%guild, count = cmds.len(), "commandes enregistrées"),
+        Err(e) => error!(%guild, "enregistrement des commandes : {e}"),
+    }
 }
 
 async fn on_error(err: poise::FrameworkError<'_, Data, Error>) {

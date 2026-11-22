@@ -287,3 +287,106 @@ mod tests {
         assert!(players_of(&pool, 100).await.unwrap().is_empty());
     }
 }
+
+// --- events ----------------------------------------------------------------
+
+/// IDs Discord stockés en i64 (SQLite), convertis à l'usage.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Event {
+    pub id: i64,
+    pub guild_id: i64,
+    pub channel_id: i64,
+    pub role_id: Option<i64>,
+    pub name: String,
+    pub emoji: String,
+    pub message: String,
+    pub first_start: i64,
+    pub interval_secs: i64,
+    pub lead_secs: i64,
+    pub last_notified: i64,
+}
+
+pub struct NewEvent<'a> {
+    pub guild_id: u64,
+    pub channel_id: u64,
+    pub role_id: Option<u64>,
+    pub name: &'a str,
+    pub emoji: &'a str,
+    pub message: &'a str,
+    pub first_start: i64,
+    pub interval_secs: i64,
+    pub lead_secs: i64,
+    pub created_by: u64,
+}
+
+pub async fn insert_event(pool: &Pool, e: &NewEvent<'_>) -> sqlx::Result<i64> {
+    let res = sqlx::query(
+        "INSERT INTO events (guild_id, channel_id, role_id, name, emoji, message,
+                             first_start, interval_secs, lead_secs, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(e.guild_id as i64)
+    .bind(e.channel_id as i64)
+    .bind(e.role_id.map(|r| r as i64))
+    .bind(e.name)
+    .bind(e.emoji)
+    .bind(e.message)
+    .bind(e.first_start)
+    .bind(e.interval_secs)
+    .bind(e.lead_secs)
+    .bind(e.created_by as i64)
+    .execute(pool)
+    .await?;
+    Ok(res.last_insert_rowid())
+}
+
+pub async fn all_events(pool: &Pool) -> sqlx::Result<Vec<Event>> {
+    sqlx::query_as(
+        "SELECT id, guild_id, channel_id, role_id, name, emoji, message,
+                first_start, interval_secs, lead_secs, last_notified
+         FROM events",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn events_of(pool: &Pool, guild_id: u64) -> sqlx::Result<Vec<Event>> {
+    sqlx::query_as(
+        "SELECT id, guild_id, channel_id, role_id, name, emoji, message,
+                first_start, interval_secs, lead_secs, last_notified
+         FROM events WHERE guild_id = ? ORDER BY id",
+    )
+    .bind(guild_id as i64)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn event(pool: &Pool, guild_id: u64, id: i64) -> sqlx::Result<Option<Event>> {
+    sqlx::query_as(
+        "SELECT id, guild_id, channel_id, role_id, name, emoji, message,
+                first_start, interval_secs, lead_secs, last_notified
+         FROM events WHERE guild_id = ? AND id = ?",
+    )
+    .bind(guild_id as i64)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn set_last_notified(pool: &Pool, id: i64, start: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE events SET last_notified = ? WHERE id = ?")
+        .bind(start)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_event(pool: &Pool, guild_id: u64, id: i64) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM events WHERE guild_id = ? AND id = ?")
+        .bind(guild_id as i64)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}

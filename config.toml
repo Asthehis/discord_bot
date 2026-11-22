@@ -2,6 +2,7 @@ guild_id = 1538899491539779695
 verif_category = 1573352613959831634
 # Fichier SQLite (monter un PVC sur /data en prod).
 database_path = "data/bot.db"
+reminder_guilds = [1518955664012087477]
 
 [roles]
 verified = 1556360528958459955

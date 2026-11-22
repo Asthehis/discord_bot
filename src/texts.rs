@@ -18,6 +18,8 @@ pub struct Texts {
     pub common: Common,
     /// `/register`, `/unregister` et codes cadeaux : anglais uniquement.
     pub gift: GiftTexts,
+    /// `/event` et rappels : anglais uniquement.
+    pub events: EventTexts,
     /// Textes côté membre, une entrée par clé de langue (`en` obligatoire).
     lang: HashMap<String, Lang>,
 }
@@ -63,6 +65,25 @@ pub struct GiftTexts {
     pub code_invalid: String,
     pub code_summary_title: String,
     pub code_summary: String,
+}
+
+/// Placeholders : `{id}`, `{emoji}`, `{name}`, `{next}`, `{every}`, `{before}`,
+/// `{channel}`, `{ping}`, `{skipped}` ; rappel : `{relative}`, `{time}`, `{message}`.
+#[derive(Debug, Deserialize)]
+pub struct EventTexts {
+    pub reminder: String,
+    pub added: String,
+    pub list_title: String,
+    pub list_line: String,
+    pub list_empty: String,
+    pub skipped: String,
+    pub removed: String,
+    pub not_found: String,
+    pub not_enabled: String,
+    pub need_name: String,
+    pub bad_start: String,
+    pub bad_every: String,
+    pub start_past: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,7 +177,7 @@ impl Texts {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const EXAMPLE: &str = include_str!("../messages.example.toml");
@@ -167,6 +188,10 @@ mod tests {
 
     fn texts(toml: &str) -> anyhow::Result<Texts> {
         Texts::from_figment(Figment::from(Toml::string(toml)), &config())
+    }
+
+    pub(crate) fn example_texts() -> Texts {
+        texts(EXAMPLE).unwrap()
     }
 
     #[test]

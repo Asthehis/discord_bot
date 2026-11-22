@@ -2,6 +2,9 @@ guild_id = 0
 verif_category = 0
 # Fichier SQLite (monter un PVC sur /data en prod).
 database_path = "data/bot.db"
+# Serveurs où les rappels d'events (/event) sont disponibles (le principal et/ou d'autres).
+# Seul /event y est enregistré ; vérif et codes restent sur guild_id.
+reminder_guilds = []
 
 [roles]
 verified = 0

@@ -17,6 +17,10 @@ Bot Discord en Rust (poise + serenity) pour l'onboarding d'un serveur de jeu.
 - Codes cadeaux : détectés dans `channels.gift_codes` (y compris annonces suivies) et via
   l'API communautaire de partage (lecture seule) → réclamés pour tous les joueurs par un
   worker unique, résumé posté dans le salon
+- `/event add|list|skip|remove` (Gérer le serveur) : rappels d'events du jeu (modèles Bear Trap,
+  Viking…, ou Custom), heures UTC, récurrence + délai avant ; tâche toutes les 30 s, anti-doublon
+  via `last_notified`. Disponible sur `reminder_guilds` (le bot peut être sur plusieurs serveurs ;
+  vérif/codes restent sur `guild_id`). Commandes enregistrées par serveur au `GuildCreate`
 
 ## Contraintes
 - Vérification sans état : custom_ids fixes, lien membre ↔ salon dans le topic du salon

@@ -32,6 +32,26 @@ Run `/register`, enter your Governor ID, then select your alliance. This done, y
 Head to {roles} and select your language(s) to unlock language channels.
 """
 
+
+[events]
+# {relative} = « in 30 minutes » dans la langue et le fuseau de chaque membre.
+reminder = """
+{emoji} **{name}** starts {relative} ({time})!
+{message}
+{ping}"""
+added = "✅ Reminder **#{id}** {emoji} **{name}** created: next {next}, {every}, {before} min before in {channel} {ping}"
+list_title = "📅 Event reminders"
+list_line = "`#{id}` {emoji} **{name}** — {next} · {every} · {before} min before in {channel} {ping}"
+list_empty = "No reminders on this server yet. Create one with `/event add`."
+skipped = "⏭️ **{name}** on {skipped} skipped. Next one: {next}"
+removed = "🗑️ Reminder **#{id} {name}** deleted."
+not_found = "❌ Unknown reminder."
+not_enabled = "❌ Event reminders are not enabled on this server."
+need_name = "❌ A Custom event needs a `name`."
+bad_start = "❌ Invalid start. Use `YYYY-MM-DD HH:MM` or `HH:MM`, in UTC (game time)."
+bad_every = "❌ Invalid repeat. Use e.g. `2d`, `1w`, `12h` (1 hour minimum) or `once`."
+start_past = "❌ This date is already past."
+
 [lang.en]
 verif_title = "Welcome to the server!"
 verif_description = """
