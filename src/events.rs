@@ -64,20 +64,49 @@ struct Preset {
 
 impl Template {
     fn preset(self) -> Preset {
-        let p = |name, emoji, interval, message| Preset { name, emoji, interval, message };
+        let p = |name, emoji, interval, message| Preset {
+            name,
+            emoji,
+            interval,
+            message,
+        };
         match self {
-            Self::BearTrap => p("Bear Trap", "🐻", 2 * DAY,
-                "Get your buffs on and prepare your marches for the hunt!"),
-            Self::VikingVengeance => p("Viking Vengeance", "🔥", 4 * WEEK,
-                "Come online and join the defense!"),
-            Self::SwordlandShowdown => p("Swordland Showdown", "⚔️", 2 * WEEK,
-                "Buff up, heal up, recall your marches and get ready to fight!"),
-            Self::TriAllianceClash => p("Tri-Alliance Clash", "🔱", 4 * WEEK,
-                "Buff up and get ready to fight!"),
-            Self::FortressBattle => p("Fortress Battle", "🏯", WEEK,
-                "Prepare to rally and fight for the registered Strongholds and Forts."),
-            Self::DailyReset => p("Daily Reset", "🔄", DAY,
-                "Make sure you have done your dailies and arena battles!"),
+            Self::BearTrap => p(
+                "Bear Trap",
+                "🐻",
+                2 * DAY,
+                "Get your buffs on and prepare your marches for the hunt!",
+            ),
+            Self::VikingVengeance => p(
+                "Viking Vengeance",
+                "🔥",
+                4 * WEEK,
+                "Come online and join the defense!",
+            ),
+            Self::SwordlandShowdown => p(
+                "Swordland Showdown",
+                "⚔️",
+                2 * WEEK,
+                "Buff up, heal up, recall your marches and get ready to fight!",
+            ),
+            Self::TriAllianceClash => p(
+                "Tri-Alliance Clash",
+                "🔱",
+                4 * WEEK,
+                "Buff up and get ready to fight!",
+            ),
+            Self::FortressBattle => p(
+                "Fortress Battle",
+                "🏯",
+                WEEK,
+                "Prepare to rally and fight for the registered Strongholds and Forts.",
+            ),
+            Self::DailyReset => p(
+                "Daily Reset",
+                "🔄",
+                DAY,
+                "Make sure you have done your dailies and arena battles!",
+            ),
             Self::Custom => p("", "📅", 0, ""),
         }
     }
@@ -116,7 +145,11 @@ impl db::Event {
 
     /// Prochaine occurrence pas encore rappelée ni sautée.
     fn next(&self, now: i64) -> Option<i64> {
-        occurrence_after(self.first_start, self.interval_secs, now.max(self.last_notified))
+        occurrence_after(
+            self.first_start,
+            self.interval_secs,
+            now.max(self.last_notified),
+        )
     }
 
     /// Prochain début affiché dans le tableau : l'occurrence à venir, même déjà rappelée,
@@ -147,7 +180,9 @@ impl db::Event {
 // --- dates (UTC, sans dépendance) ---------------------------------------------
 
 fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// Jours depuis 1970-01-01 (algorithme de H. Hinnant).
@@ -228,18 +263,28 @@ fn format_every(secs: i64) -> String {
 fn format_utc(ts: i64) -> String {
     let (y, m, d) = civil_from_days(ts.div_euclid(DAY));
     let secs = ts.rem_euclid(DAY);
-    format!("{y}-{m:02}-{d:02} {:02}:{:02} UTC", secs / HOUR, secs % HOUR / MINUTE)
+    format!(
+        "{y}-{m:02}-{d:02} {:02}:{:02} UTC",
+        secs / HOUR,
+        secs % HOUR / MINUTE
+    )
 }
 
 // --- commandes ----------------------------------------------------------------
 
 /// Serveur courant, s'il a les rappels activés.
 fn reminder_guild(ctx: Context<'_>) -> Option<GuildId> {
-    ctx.guild_id().filter(|&g| ctx.data().guilds.get(g).reminders)
+    ctx.guild_id()
+        .filter(|&g| ctx.data().guilds.get(g).reminders)
 }
 
 async fn reply(ctx: Context<'_>, content: impl Into<String>) -> Result<(), Error> {
-    ctx.send(poise::CreateReply::default().content(content).ephemeral(true)).await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .content(content)
+            .ephemeral(true),
+    )
+    .await?;
     Ok(())
 }
 
@@ -337,7 +382,10 @@ async fn add(
         .replace("{every}", &format_every(interval))
         .replace("{before}", &(lead / MINUTE).to_string())
         .replace("{channel}", &format!("<#{channel_id}>"))
-        .replace("{ping}", &role.map_or_else(String::new, |r| format!("<@&{}>", r.id)));
+        .replace(
+            "{ping}",
+            &role.map_or_else(String::new, |r| format!("<@&{}>", r.id)),
+        );
     reply(ctx, text).await?;
     refresh_board(ctx.http(), data, guild).await;
     Ok(())
@@ -360,7 +408,9 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
 
     let mut description = String::new();
     for e in &events {
-        let next = e.next(now).map_or_else(|| "—".into(), |s| format!("<t:{s}:F> (<t:{s}:R>)"));
+        let next = e
+            .next(now)
+            .map_or_else(|| "—".into(), |s| format!("<t:{s}:F> (<t:{s}:R>)"));
         let line = t
             .list_line
             .replace("{id}", &e.id.to_string())
@@ -370,7 +420,10 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
             .replace("{every}", &format_every(e.interval_secs))
             .replace("{before}", &(e.lead_secs / MINUTE).to_string())
             .replace("{channel}", &format!("<#{}>", e.channel_id))
-            .replace("{ping}", &e.role().map_or_else(String::new, |r| format!("<@&{r}>")));
+            .replace(
+                "{ping}",
+                &e.role().map_or_else(String::new, |r| format!("<@&{r}>")),
+            );
         // Limite Discord d'une description d'embed.
         if description.len() + line.len() > 4000 {
             description.push('…');
@@ -379,8 +432,11 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
         description.push_str(line.trim_end());
         description.push('\n');
     }
-    let embed = CreateEmbed::new().title(&t.list_title).description(description);
-    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true)).await?;
+    let embed = CreateEmbed::new()
+        .title(&t.list_title)
+        .description(description);
+    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+        .await?;
     Ok(())
 }
 
@@ -441,7 +497,10 @@ async fn remove(
     };
     db::delete_event(&data.db, guild.get(), id).await?;
     info!(%guild, id, name = e.name, user = %ctx.author().id, "reminder deleted");
-    let text = t.removed.replace("{id}", &id.to_string()).replace("{name}", &e.name);
+    let text = t
+        .removed
+        .replace("{id}", &id.to_string())
+        .replace("{name}", &e.name);
     reply(ctx, text).await?;
     refresh_board(ctx.http(), data, guild).await;
     Ok(())
@@ -477,11 +536,15 @@ async fn board(
     let events = db::events_of(&data.db, guild.get()).await?;
     let (embed, content) = render_board(t, &events, now_secs());
     let (message, pinned) = post_board(ctx.http(), channel.id, embed).await?;
-    data.guilds.update(guild, |s| s.board = Some((channel.id, message))).await?;
+    data.guilds
+        .update(guild, |s| s.board = Some((channel.id, message)))
+        .await?;
     boards.insert(guild, content);
     info!(%guild, user = %ctx.author().id, channel = %channel.id, "event board posted");
 
-    let mut text = t.board_set.replace("{channel}", &channel.mention().to_string());
+    let mut text = t
+        .board_set
+        .replace("{channel}", &channel.mention().to_string());
     if !pinned {
         text.push('\n');
         text.push_str(&t.board_pin_failed);
@@ -495,7 +558,9 @@ async fn autocomplete_event(ctx: Context<'_>, partial: &str) -> CreateAutocomple
     };
     let now = now_secs();
     let partial = partial.to_lowercase();
-    let events = db::events_of(&ctx.data().db, guild.get()).await.unwrap_or_default();
+    let events = db::events_of(&ctx.data().db, guild.get())
+        .await
+        .unwrap_or_default();
     let choices = events
         .into_iter()
         .filter(|e| e.name.to_lowercase().contains(&partial) || e.id.to_string() == partial)
@@ -539,7 +604,12 @@ async fn run_due(http: &serenity::Http, data: &Data) -> anyhow::Result<()> {
             db::set_last_notified(&data.db, e.id, start).await?;
         }
         if now > start + GRACE {
-            info!(id = e.id, name = e.name, start, "reminder missed (bot offline), skipped");
+            info!(
+                id = e.id,
+                name = e.name,
+                start,
+                "reminder missed (bot offline), skipped"
+            );
             continue;
         }
         let msg = CreateMessage::new()
@@ -547,7 +617,12 @@ async fn run_due(http: &serenity::Http, data: &Data) -> anyhow::Result<()> {
             .allowed_mentions(CreateAllowedMentions::new().roles(e.role()));
         match e.channel().send_message(http, msg).await {
             Ok(_) => info!(id = e.id, name = e.name, "reminder sent"),
-            Err(err) => warn!(id = e.id, name = e.name, channel = e.channel_id, "reminder not sent: {err}"),
+            Err(err) => warn!(
+                id = e.id,
+                name = e.name,
+                channel = e.channel_id,
+                "reminder not sent: {err}"
+            ),
         }
     }
     Ok(())
@@ -576,11 +651,18 @@ pub async fn refresh_board(http: &serenity::Http, data: &Data, guild: GuildId) {
     }
     boards.insert(guild, content);
 
-    match channel.edit_message(http, message, EditMessage::new().embed(embed.clone())).await {
+    match channel
+        .edit_message(http, message, EditMessage::new().embed(embed.clone()))
+        .await
+    {
         Ok(_) => {}
         Err(e) if is_unknown_message(&e) => match post_board(http, channel, embed).await {
             Ok((message, _)) => {
-                if let Err(e) = data.guilds.update(guild, |s| s.board = Some((channel, message))).await {
+                if let Err(e) = data
+                    .guilds
+                    .update(guild, |s| s.board = Some((channel, message)))
+                    .await
+                {
                     error!(%guild, "saving the event board: {e}");
                 }
                 info!(%guild, "event board was deleted, posted again");
@@ -596,7 +678,9 @@ async fn post_board(
     channel: ChannelId,
     embed: CreateEmbed,
 ) -> Result<(MessageId, bool), Error> {
-    let msg = channel.send_message(http, CreateMessage::new().embed(embed)).await?;
+    let msg = channel
+        .send_message(http, CreateMessage::new().embed(embed))
+        .await?;
     let pinned = match msg.pin(http).await {
         Ok(()) => true,
         Err(e) => {
@@ -657,7 +741,10 @@ fn render_reminder(t: &EventTexts, e: &db::Event, start: i64) -> String {
         .replace("{relative}", &format!("<t:{start}:R>"))
         .replace("{time}", &format!("<t:{start}:t>"))
         .replace("{message}", &e.message)
-        .replace("{ping}", &e.role().map_or_else(String::new, |r| format!("<@&{r}>")))
+        .replace(
+            "{ping}",
+            &e.role().map_or_else(String::new, |r| format!("<@&{r}>")),
+        )
         .trim()
         .to_string()
 }
@@ -747,7 +834,10 @@ mod tests {
         let mut daily = ev(5_000, DAY, 0, 0);
         daily.name = "Daily Reset".into();
         let (_, text) = render_board(&t, &[bear.clone(), daily], 0);
-        assert!(text.contains("Bear Trap") && !text.contains("Daily Reset"), "{text}");
+        assert!(
+            text.contains("Bear Trap") && !text.contains("Daily Reset"),
+            "{text}"
+        );
         assert!(text.contains("<t:10000:R>"), "{text}");
 
         // Déjà rappelée (fenêtre du rappel) : toujours affichée.
@@ -770,6 +860,9 @@ mod tests {
         let mut e = ev(10_000, DAY, 0, 0);
         e.role_id = Some(42);
         let msg = render_reminder(&texts.events, &e, 10_000);
-        assert!(msg.contains("<t:10000:R>") && msg.contains("<@&42>"), "{msg}");
+        assert!(
+            msg.contains("<t:10000:R>") && msg.contains("<@&42>"),
+            "{msg}"
+        );
     }
 }
