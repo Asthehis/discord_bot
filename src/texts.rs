@@ -48,8 +48,8 @@ pub struct Common {
     /// Placeholder : `{languages}`.
     pub roles_updated: String,
     pub roles_none: String,
-    /// Placeholders : `{user}`, `{rules}`, `{roles}`.
-    pub welcome: String,
+    /// Description du récap quand l'alliance saisie n'est pas dans la config.
+    pub unknown_alliance: String,
 }
 
 /// Placeholders : `{id}`, `{kingdom}`, `{alliance}`, `{code}`, `{reason}`,
@@ -151,6 +151,8 @@ pub struct Lang {
     /// Placeholder : `{channel}`.
     pub request_created: String,
     pub ticket_intro: String,
+    /// Placeholders : `{user}`, `{rules}`, `{roles}`. Suivi de la version anglaise.
+    pub welcome: String,
 }
 
 impl Texts {
@@ -187,8 +189,7 @@ impl Texts {
             ("common.roles_description".into(), &c.roles_description, 4096),
             ("common.roles_button".into(), &c.roles_button, 80),
             ("common.roles_placeholder".into(), &c.roles_placeholder, 150),
-            // Marge pour les mentions qui remplacent les placeholders.
-            ("common.welcome".into(), &c.welcome, 1900),
+            ("common.unknown_alliance".into(), &c.unknown_alliance, 4096),
         ];
         for (key, l) in &self.lang {
             let p = |f: &str| format!("lang.{key}.{f}");
@@ -203,6 +204,8 @@ impl Texts {
                 (p("modal_kingdom"), &l.modal_kingdom, 45),
                 // Traduction + version anglaise + mentions doivent tenir dans 2000.
                 (p("ticket_intro"), &l.ticket_intro, 900),
+                // Idem pour le welcome (traduction + anglais en petit).
+                (p("welcome"), &l.welcome, 900),
             ]);
         }
         for (name, text, max) in checks {

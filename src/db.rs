@@ -43,20 +43,32 @@ pub async fn upsert_member(
     name: &str,
     alliance: &str,
     kingdom: i64,
+    lang: &str,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO members (discord_id, name, alliance, kingdom) VALUES (?, ?, ?, ?)
+        "INSERT INTO members (discord_id, name, alliance, kingdom, lang) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (discord_id) DO UPDATE SET
-           name = excluded.name, alliance = excluded.alliance,
-           kingdom = excluded.kingdom, verified_at = datetime('now')",
+           name = excluded.name, alliance = excluded.alliance, kingdom = excluded.kingdom,
+           lang = excluded.lang, verified_at = datetime('now')",
     )
     .bind(discord_id as i64)
     .bind(name)
     .bind(alliance)
     .bind(kingdom)
+    .bind(lang)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Langue choisie à la vérification (None : jamais vérifié, ou avant la migration 0007).
+pub async fn member_lang(pool: &Pool, discord_id: u64) -> sqlx::Result<Option<String>> {
+    let lang: Option<Option<String>> =
+        sqlx::query_scalar("SELECT lang FROM members WHERE discord_id = ?")
+            .bind(discord_id as i64)
+            .fetch_optional(pool)
+            .await?;
+    Ok(lang.flatten())
 }
 
 // --- players ---------------------------------------------------------------
@@ -301,6 +313,15 @@ mod tests {
                 alliance: "ABC".into()
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn member_lang_is_saved() {
+        let pool = mem().await;
+        assert_eq!(member_lang(&pool, 1).await.unwrap(), None);
+        upsert_member(&pool, 1, "Bob", "ABC", 42, "fr").await.unwrap();
+        upsert_member(&pool, 1, "Bob", "ABC", 42, "tr").await.unwrap();
+        assert_eq!(member_lang(&pool, 1).await.unwrap().as_deref(), Some("tr"));
     }
 
     #[tokio::test]

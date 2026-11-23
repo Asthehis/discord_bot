@@ -268,7 +268,7 @@ async fn create_ticket(
 
     let lang_label = data.config.language(t.lang_key).map_or("English", |l| l.label.as_str());
 
-    // Le champ 0 (pseudo) est relu par `recap_name` au moment de la validation.
+    // Champs 0 à 3 relus par `recap_info` au moment de la validation : ne pas réordonner.
     let recap = CreateEmbed::new()
         .title(&c.recap_title)
         .color(EMBED_COLOR)
@@ -277,6 +277,11 @@ async fn create_ticket(
         .field(&c.field_alliance, t.alliance, true)
         .field(&c.field_kingdom, t.kingdom, true)
         .field(&c.field_language, lang_label, true);
+    let recap = if data.config.alliance(t.alliance).is_none() {
+        recap.description(&c.unknown_alliance)
+    } else {
+        recap
+    };
 
     let buttons = CreateActionRow::Buttons(vec![
         CreateButton::new(ID_VERIFIED).label(&c.button_verified).style(ButtonStyle::Success),
@@ -355,39 +360,93 @@ async fn on_decision(
         }
     };
 
-    let mut roles = member.roles.clone();
-    if !roles.contains(&role) {
-        roles.push(role);
-    }
+    let info = recap_info(&i.message);
+    let lang = info.as_ref().map_or(DEFAULT_LANG, |r| lang_from_label(data, r.lang_label));
 
-    // Rôle + pseudo en un seul appel => un seul guild_member_update.
-    let mut edit = EditMember::new().roles(roles.clone());
-    if let Some(name) = recap_name(&i.message) {
-        edit = edit.nickname(name);
-    }
-    if let Err(e) = guild.edit_member(ctx, user_id, edit).await {
-        // Renommage impossible (owner, rôle au-dessus du bot…) : on donne au moins le rôle.
-        warn!(%guild, user = %user_id, "cannot set role + nickname ({e}), role only");
-        if let Err(e) = guild.edit_member(ctx, user_id, EditMember::new().roles(roles)).await {
-            i.edit_response(ctx, EditInteractionResponse::new().content(&c.action_failed)).await?;
-            return Err(e.into());
-        }
-    }
-    // Pré-remplissage de /register. Non bloquant : la validation est déjà faite.
-    if let Some((name, alliance, kingdom)) = recap_info(&i.message)
-        && let Err(e) = crate::db::upsert_member(&data.db, user_id.get(), name, alliance, kingdom).await
+    // Enregistré avant l'édition : `members::on_update` y lit la langue du welcome.
+    // Non bloquant : sert aussi au pré-remplissage de /register.
+    if let Some(r) = &info
+        && let Err(e) =
+            crate::db::upsert_member(&data.db, user_id.get(), r.name, r.alliance, r.kingdom, lang).await
     {
         warn!(user = %user_id, "saving verification info: {e}");
     }
+
+    let mut base = member.roles.clone();
+    if !base.contains(&role) {
+        base.push(role);
+    }
+    // Rôle de langue (Verified et Guest) + rôle d'alliance (Verified uniquement).
+    let mut roles = base.clone();
+    let lang_role = data.guilds.get(guild).languages.iter().find(|(k, _)| k == lang).map(|(_, r)| *r);
+    let alliance_role = match (decision, &info) {
+        (Decision::Verified, Some(r)) => alliance_role(ctx, data, guild, r.alliance),
+        _ => None,
+    };
+    for r in lang_role.into_iter().chain(alliance_role) {
+        if !roles.contains(&r) {
+            roles.push(r);
+        }
+    }
+
+    // Rôles + pseudo en un seul appel => un seul guild_member_update.
+    let mut edit = EditMember::new().roles(roles.clone());
+    if let Some(r) = info.as_ref().filter(|r| !r.name.is_empty()) {
+        edit = edit.nickname(r.name);
+    }
+    if let Err(e) = guild.edit_member(ctx, user_id, edit).await {
+        // Renommage ou rôle impossible (owner, rôle au-dessus du bot…) : on essaie avec les
+        // rôles seuls, puis avec le seul rôle de validation.
+        warn!(%guild, user = %user_id, "cannot set roles + nickname ({e}), retrying with roles only");
+        if let Err(e) = guild.edit_member(ctx, user_id, EditMember::new().roles(roles)).await {
+            warn!(%guild, user = %user_id, "cannot set language/alliance roles ({e}), verification role only");
+            if let Err(e) = guild.edit_member(ctx, user_id, EditMember::new().roles(base)).await {
+                i.edit_response(ctx, EditInteractionResponse::new().content(&c.action_failed)).await?;
+                return Err(e.into());
+            }
+        }
+    }
+    info!(%guild, user = %user_id, lang, alliance_role = ?alliance_role, language_role = ?lang_role, "member validated");
     // La suite (welcome + suppression du salon) est faite par `members::on_update`.
     Ok(())
 }
 
-/// (pseudo, alliance, kingdom) relus dans l'embed récap (champs 0, 1, 2).
-fn recap_info(message: &Message) -> Option<(&str, &str, i64)> {
+/// Infos relues dans l'embed récap (champs 0 à 3).
+struct RecapInfo<'a> {
+    name: &'a str,
+    alliance: &'a str,
+    kingdom: i64,
+    lang_label: &'a str,
+}
+
+fn recap_info(message: &Message) -> Option<RecapInfo<'_>> {
     let fields = &message.embeds.first()?.fields;
-    let kingdom = fields.get(2)?.value.trim().parse().ok()?;
-    Some((fields.first()?.value.trim(), fields.get(1)?.value.trim(), kingdom))
+    Some(RecapInfo {
+        name: fields.first()?.value.trim(),
+        alliance: fields.get(1)?.value.trim(),
+        kingdom: fields.get(2)?.value.trim().parse().ok()?,
+        lang_label: fields.get(3).map_or("", |f| f.value.trim()),
+    })
+}
+
+/// Clé de langue depuis le libellé affiché dans le récap (anglais si inconnu).
+fn lang_from_label<'a>(data: &'a Data, label: &str) -> &'a str {
+    data.config.languages.iter().find(|l| l.label == label).map_or(DEFAULT_LANG, |l| l.key.as_str())
+}
+
+/// Rôle du serveur nommé comme le tag de l'alliance saisie (sans tenir compte de la casse).
+fn alliance_role(ctx: &serenity::Context, data: &Data, guild: GuildId, input: &str) -> Option<RoleId> {
+    let Some(alliance) = data.config.alliance(input) else {
+        warn!(%guild, alliance = input, "unknown alliance, no alliance role given");
+        return None;
+    };
+    let role = ctx.cache.guild(guild).and_then(|g| {
+        g.roles.values().find(|r| r.name.eq_ignore_ascii_case(&alliance.tag)).map(|r| r.id)
+    });
+    if role.is_none() {
+        warn!(%guild, tag = alliance.tag, "no role named like the alliance tag");
+    }
+    role
 }
 
 // --- Helpers --------------------------------------------------------------
@@ -415,11 +474,6 @@ fn ticket_owner(
     }
     let id = channel.topic.as_deref()?.strip_prefix("uid:")?.parse::<u64>().ok()?;
     Some(UserId::new(id))
-}
-
-fn recap_name(message: &Message) -> Option<&str> {
-    let value = message.embeds.first()?.fields.first()?.value.trim();
-    (!value.is_empty()).then_some(value)
 }
 
 fn channel_name(name: &str, user_id: UserId) -> String {

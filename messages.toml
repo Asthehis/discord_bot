@@ -19,17 +19,7 @@ roles_button = "Choose my languages"
 roles_placeholder = "Select your language(s)"
 roles_updated = "✅ Your languages: {languages}"
 roles_none = "✅ No language selected."
-welcome = """
-🎉 Welcome {user}!
-
-📜 Please read the rules in {rules}
-
-**1️⃣ Register your account**
-Run `/register`, enter your Governor ID, then select your alliance. This done, you'll unlock auto-claim gift codes!
-
-**2️⃣ Pick your language**
-Head to {roles} and select your language(s) to unlock language channels.
-"""
+unknown_alliance = "⚠️ Unknown alliance: no alliance role will be given, add it by hand if needed."
 
 
 [setup]
@@ -113,6 +103,17 @@ invalid_kingdom = "The kingdom must be a number."
 pending_exists = "You already have a pending request: {channel}"
 request_created = "Your request has been created: {channel}"
 ticket_intro = "A moderator will review your request shortly. Please post a screenshot of your governor profile here."
+welcome = """
+🎉 Welcome {user}!
+
+📜 Please read the rules in {rules}
+
+**1️⃣ Register your account**
+Run `/register`, enter your Governor ID, then select your alliance. This done, you'll unlock auto-claim gift codes!
+
+**2️⃣ Pick your language**
+Head to {roles} and select your language(s) to unlock language channels.
+"""
 
 [lang.fr]
 verif_title = "Bienvenue sur le serveur !"
@@ -134,6 +135,17 @@ invalid_kingdom = "Le royaume doit être un nombre."
 pending_exists = "Tu as déjà une demande en cours : {channel}"
 request_created = "Ta demande a été créée : {channel}"
 ticket_intro = "Un modérateur va examiner ta demande rapidement. Poste ici une capture d'écran de ton profil de gouverneur."
+welcome = """
+🎉 Bienvenue {user} !
+
+📜 Lis les règles dans {rules}
+
+**1️⃣ Enregistre ton compte**
+Tape `/register`, entre ton Governor ID puis choisis ton alliance. Une fois fait, les codes cadeaux seront réclamés automatiquement pour toi !
+
+**2️⃣ Choisis tes langues**
+Va dans {roles} et sélectionne ta ou tes langues pour débloquer les salons correspondants.
+"""
 
 [lang.ar]
 verif_title = "مرحبًا بك في السيرفر!"
@@ -155,6 +167,17 @@ invalid_kingdom = "يجب أن تكون المملكة رقمًا."
 pending_exists = "لديك طلب قيد المراجعة بالفعل: {channel}"
 request_created = "تم إنشاء طلبك: {channel}"
 ticket_intro = "سيقوم أحد المشرفين بمراجعة طلبك قريبًا. يرجى نشر لقطة شاشة لملف الحاكم الخاص بك هنا."
+welcome = """
+🎉 مرحبًا {user}!
+
+📜 يرجى قراءة القوانين في {rules}
+
+**1️⃣ سجّل حسابك**
+اكتب `/register` وأدخل معرّف الحاكم (Governor ID) ثم اختر تحالفك. بعد ذلك ستُستلم رموز الهدايا تلقائيًا لحسابك!
+
+**2️⃣ اختر لغتك**
+توجّه إلى {roles} واختر لغتك أو لغاتك لفتح القنوات الخاصة بها.
+"""
 
 [lang.tr]
 verif_title = "Sunucuya hoş geldin!"
@@ -176,6 +199,17 @@ invalid_kingdom = "Krallık bir sayı olmalıdır."
 pending_exists = "Zaten bekleyen bir talebin var: {channel}"
 request_created = "Talebin oluşturuldu: {channel}"
 ticket_intro = "Bir moderatör talebini kısa süre içinde inceleyecek. Lütfen vali profilinin ekran görüntüsünü buraya gönder."
+welcome = """
+🎉 Hoş geldin {user}!
+
+📜 Lütfen {rules} kanalındaki kuralları oku
+
+**1️⃣ Hesabını kaydet**
+`/register` komutunu çalıştır, Governor ID'ni gir ve ittifakını seç. Bunu yaptıktan sonra hediye kodları senin için otomatik olarak kullanılacak!
+
+**2️⃣ Dilini seç**
+{roles} kanalına git ve dil kanallarının kilidini açmak için dilini (veya dillerini) seç.
+"""
 
 [gift]
 register_ok = "✅ ID `{id}` linked to your account (kingdom {kingdom}, {alliance}). Gift codes will now be claimed automatically for it!"

@@ -12,9 +12,12 @@ partout, `/roles` partout, `/register` + `/unregister` si salon des codes, `/eve
   poste le message avec le bouton de vérification
 - Clic → modal (pseudo, alliance, royaume) → salon privé `#verif-<pseudo>` (membre + Mod + bot),
   topic `uid:<id>`, embed récap + boutons Verified / Guest / Refuser (Mod only)
-- Validation : rôle donné + renommage en `Pseudo` (sans préfixe)
+- Validation : rôle donné + renommage en `Pseudo` (sans préfixe) + rôle de la langue choisie
+  (`/setup language`) ; Verified uniquement : rôle nommé comme le tag de l'alliance saisie (tag ou
+  nom de `config.alliances`, casse ignorée). Alliance inconnue → avertissement dans le récap, pas
+  de rôle. Infos + langue enregistrées dans `members` avant l'attribution des rôles
 - `guild_member_update` : passage à Verified ou Guest → welcome dans le salon welcome
-  (le même pour les deux), puis suppression du salon (sans transcript)
+  (le même pour les deux, dans la langue choisie + anglais en petit), puis suppression du salon (sans transcript)
 - Refus : suppression du salon uniquement, pas de kick
 - `guild_member_removal` : supprime le salon de vérif s'il existe
 - `/setup language` (langue du catalogue → rôle) + `/setup languages` (salon) : bouton → menu
