@@ -595,7 +595,7 @@ async fn post_board(
     http: &serenity::Http,
     channel: ChannelId,
     embed: CreateEmbed,
-) -> serenity::Result<(MessageId, bool)> {
+) -> Result<(MessageId, bool), Error> {
     let msg = channel.send_message(http, CreateMessage::new().embed(embed)).await?;
     let pinned = match msg.pin(http).await {
         Ok(()) => true,
