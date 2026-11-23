@@ -98,7 +98,7 @@ pub async fn run(config: &Config, args: &[String]) -> anyhow::Result<()> {
             Some(_) => updated += 1,
             None => imported += 1,
         }
-        db::upsert_player(&pool, fid, discord_id, kid, &new_alliance.tag).await?;
+        db::upsert_player(&pool, fid, discord_id, kid, &new_alliance.tag, None).await?;
         let label = if old_name == new_alliance.tag {
             new_alliance.tag.clone()
         } else {

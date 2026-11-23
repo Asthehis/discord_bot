@@ -2,9 +2,6 @@ guild_id = 0
 verif_category = 0
 # Fichier SQLite (monter un PVC sur /data en prod).
 database_path = "data/bot.db"
-# Serveurs où les rappels d'events (/event) sont disponibles (le principal et/ou d'autres).
-# Seul /event y est enregistré ; vérif et codes restent sur guild_id.
-reminder_guilds = []
 
 [roles]
 verified = 0
@@ -49,7 +46,18 @@ key = "super_secret_bot_token_nobody_will_ever_find"
 [[alliances]]
 tag = "ABC"
 name = "Alliance ABC"
+kingdom = 1234
 
 [[alliances]]
 tag = "XYZ"
 name = "Alliance XYZ"
+kingdom = 1234
+
+# Serveurs annexes (ex. serveur d'une alliance). Vérification et rôles restent sur guild_id.
+# Pour avoir /event sur le serveur principal : une entrée avec son id et reminders = true.
+[[guilds]]
+id = 1
+# /event (rappels d'events)
+reminders = true
+# Salon des codes de ce serveur : détection + résumés ; active /register et /unregister.
+gift_codes = 2

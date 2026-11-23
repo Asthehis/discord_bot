@@ -147,21 +147,27 @@ async fn event_handler(
     Ok(())
 }
 
-/// Serveur principal : toutes les commandes sauf `/event` ; `reminder_guilds` : `/event`.
+/// Principal : vérif, rôles, codes. Selon `guilds` : `/event` et/ou `/register`.
 async fn register_commands(
     ctx: &serenity::Context,
     data: &Data,
     commands: &[poise::Command<Data, Error>],
     guild: GuildId,
 ) {
-    let main = guild == data.config.guild_id;
-    let reminders = data.config.reminder_guilds.contains(&guild);
-    if !main && !reminders {
+    let cfg = &data.config;
+    let main = guild == cfg.guild_id;
+    let gift = cfg.gift_channel(guild).is_some();
+    let reminders = cfg.reminders_enabled(guild);
+    if !main && !gift && !reminders {
         return;
     }
     let list: Vec<_> = commands
         .iter()
-        .filter(|c| if c.name == events::COMMAND { reminders } else { main })
+        .filter(|c| match c.name.as_ref() {
+            events::COMMAND => reminders,
+            name if register::COMMANDS.contains(&name) => gift,
+            _ => main,
+        })
         .filter_map(|c| c.create_as_slash_command())
         .collect();
     match guild.set_commands(&ctx.http, list).await {

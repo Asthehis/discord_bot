@@ -25,9 +25,19 @@ pub struct Config {
     pub database_path: String,
     pub gift: Gift,
     pub alliances: Vec<Alliance>,
-    /// Serveurs où `/event` (rappels) est disponible ; peut inclure `guild_id`.
+    /// Serveurs annexes (rappels, codes cadeaux). Le principal peut y figurer pour `/event`.
     #[serde(default)]
-    pub reminder_guilds: Vec<GuildId>,
+    pub guilds: Vec<ExtraGuild>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExtraGuild {
+    pub id: GuildId,
+    /// Active `/event`.
+    #[serde(default)]
+    pub reminders: bool,
+    /// Salon des codes de ce serveur (détection + résumés) ; active `/register`.
+    pub gift_codes: Option<ChannelId>,
 }
 
 fn default_database_path() -> String {
@@ -52,6 +62,8 @@ pub struct ShareApi {
 pub struct Alliance {
     pub tag: String,
     pub name: String,
+    /// Royaume de l'alliance : utilisé par `/register`.
+    pub kingdom: i64,
 }
 
 impl Config {
@@ -61,6 +73,33 @@ impl Config {
         self.alliances
             .iter()
             .find(|a| a.tag.eq_ignore_ascii_case(input) || a.name.eq_ignore_ascii_case(input))
+    }
+
+    fn extra(&self, guild: GuildId) -> Option<&ExtraGuild> {
+        self.guilds.iter().find(|g| g.id == guild)
+    }
+
+    pub fn reminders_enabled(&self, guild: GuildId) -> bool {
+        self.extra(guild).is_some_and(|g| g.reminders)
+    }
+
+    /// Salon des codes du serveur (le principal en a toujours un).
+    pub fn gift_channel(&self, guild: GuildId) -> Option<ChannelId> {
+        if guild == self.guild_id {
+            Some(self.channels.gift_codes)
+        } else {
+            self.extra(guild).and_then(|g| g.gift_codes)
+        }
+    }
+
+    /// Tous les salons des codes, avec leur serveur.
+    pub fn gift_channels(&self) -> impl Iterator<Item = (GuildId, ChannelId)> + '_ {
+        std::iter::once((self.guild_id, self.channels.gift_codes)).chain(
+            self.guilds
+                .iter()
+                .filter(|g| g.id != self.guild_id)
+                .filter_map(|g| Some((g.id, g.gift_codes?))),
+        )
     }
 }
 
@@ -146,6 +185,18 @@ impl Config {
             if !tags.insert(a.tag.to_lowercase()) {
                 bail!("tag d'alliance en double : `{}`", a.tag);
             }
+            if a.kingdom <= 0 {
+                bail!("alliance `{}` : `kingdom` invalide", a.tag);
+            }
+        }
+        let mut ids = HashSet::new();
+        for g in &self.guilds {
+            if !ids.insert(g.id) {
+                bail!("serveur en double dans `guilds` : {}", g.id);
+            }
+            if g.id == self.guild_id && g.gift_codes.is_some() {
+                bail!("serveur principal : son salon des codes est `channels.gift_codes`");
+            }
         }
         if self.gift.encrypt_key.is_empty() {
             bail!("`gift.encrypt_key` est vide");
@@ -176,6 +227,10 @@ pub(crate) mod tests {
     fn example_is_valid() {
         let c = example_config();
         assert_eq!(c.languages.len(), 3);
+        assert_eq!(c.gift_channels().count(), 2);
+        let extra = c.guilds[0].id;
+        assert!(c.reminders_enabled(extra) && !c.reminders_enabled(c.guild_id));
+        assert!(c.gift_channel(extra).is_some());
     }
 
     #[test]

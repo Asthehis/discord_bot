@@ -2,6 +2,9 @@ use poise::serenity_prelude::{AutocompleteChoice, CreateAutocompleteResponse};
 
 use crate::{Context, Error, db, gift::Job, giftapi::Outcome};
 
+/// Commandes enregistrées sur les serveurs qui ont un salon des codes.
+pub const COMMANDS: [&str; 2] = ["register", "unregister"];
+
 /// Link your in-game Governor ID to unlock auto-claimed gift codes.
 #[poise::command(slash_command, guild_only)]
 pub async fn register(
@@ -12,9 +15,6 @@ pub async fn register(
     #[description = "Your alliance"]
     #[autocomplete = "autocomplete_alliance"]
     alliance: String,
-    #[description = "Your kingdom number (defaults to the one given during verification)"]
-    #[min = 1]
-    kingdom: Option<u32>,
 ) -> Result<(), Error> {
     let data = ctx.data();
     let t = &data.texts.gift;
@@ -22,16 +22,14 @@ pub async fn register(
     let fid = id as i64;
     let fill = |s: &str| s.replace("{id}", &id.to_string());
 
+    // Commande enregistrée seulement là où il y a un salon des codes.
+    let Some(guild) = ctx.guild_id().filter(|&g| data.config.gift_channel(g).is_some()) else {
+        return Ok(());
+    };
     let Some(alliance) = data.config.alliance(&alliance) else {
         return reply(ctx, &t.register_bad_alliance).await;
     };
-    let kingdom = match kingdom {
-        Some(k) => i64::from(k),
-        None => match db::member_kingdom(&data.db, user_id).await? {
-            Some(k) => k,
-            None => return reply(ctx, &t.register_need_kingdom).await,
-        },
-    };
+    let kingdom = alliance.kingdom;
     if db::player_owner(&data.db, fid).await?.is_some_and(|owner| owner != user_id) {
         return reply(ctx, &fill(&t.register_taken)).await;
     }
@@ -51,9 +49,10 @@ pub async fn register(
         _ => {}
     }
 
-    db::upsert_player(&data.db, fid, user_id, kingdom, &alliance.tag).await?;
+    let origin = (guild != data.config.guild_id).then_some(guild.get());
+    db::upsert_player(&data.db, fid, user_id, kingdom, &alliance.tag, origin).await?;
     let _ = data.jobs.send(Job::Player { fid });
-    tracing::info!(fid, user = user_id, kingdom, alliance = alliance.tag, "joueur enregistré");
+    tracing::info!(fid, user = user_id, kingdom, alliance = alliance.tag, %guild, "joueur enregistré");
 
     let mut msg = fill(&t.register_ok)
         .replace("{kingdom}", &kingdom.to_string())

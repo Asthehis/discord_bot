@@ -4,13 +4,14 @@
 //! par IP, inutile de paralléliser. Tout est en base, le worker reprend au démarrage.
 
 use std::{
+    collections::HashMap,
     sync::{Arc, LazyLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, CreateEmbed, CreateMessage, Http, Message, MessageFlags,
-    MessageId, ReactionType,
+    self as serenity, ChannelId, CreateEmbed, CreateMessage, GuildId, Http, Message,
+    MessageFlags, MessageId, ReactionType,
 };
 use regex::Regex;
 use serde::Deserialize;
@@ -74,7 +75,11 @@ fn message_codes(msg: &Message) -> Vec<String> {
 }
 
 pub async fn on_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> Result<(), Error> {
-    if msg.channel_id != data.config.channels.gift_codes {
+    let is_gift_channel = msg
+        .guild_id
+        .and_then(|g| data.config.gift_channel(g))
+        .is_some_and(|c| c == msg.channel_id);
+    if !is_gift_channel {
         return Ok(());
     }
     // Les annonces d'un salon suivi arrivent comme des messages de bot : on les garde.
@@ -213,9 +218,15 @@ async fn try_run_code(
     }
 
     let mut known_valid = db::code_status(pool, code).await?.as_deref() == Some("valid");
-    let mut stats = Stats::default();
+    // Par serveur d'inscription : chaque salon des codes a son propre résumé.
+    let mut stats: HashMap<GuildId, Stats> = HashMap::new();
 
-    for (fid, kid) in players {
+    for db::Redeemable { fid, kingdom: kid, guild_id } in players {
+        // Serveur sans salon des codes (retiré de la config) : compté sur le principal.
+        let guild = guild_id
+            .map(|g| GuildId::new(g as u64))
+            .filter(|&g| data.config.gift_channel(g).is_some())
+            .unwrap_or(data.config.guild_id);
         let outcome = data.gift_api.redeem(fid, kid, code).await;
 
         if let Outcome::CodeInvalid(reason) = outcome {
@@ -237,6 +248,7 @@ async fn try_run_code(
             }
         }
 
+        let stats = stats.entry(guild).or_default();
         match &outcome {
             Outcome::Success => stats.success += 1,
             Outcome::AlreadyReceived | Outcome::SameType => stats.already += 1,
@@ -252,8 +264,12 @@ async fn try_run_code(
     }
 
     // Résumé uniquement pour une vraie passe sur tout le monde.
-    if only_fid.is_none() && known_valid && stats.success + stats.already + stats.failed > 0 {
-        post_summary(http, data, code, &stats).await;
+    if only_fid.is_none() && known_valid {
+        for (guild, channel) in data.config.gift_channels() {
+            if let Some(s) = stats.get(&guild).filter(|s| s.success + s.already + s.failed > 0) {
+                post_summary(http, data, code, s, channel).await;
+            }
+        }
     }
     Ok(())
 }
@@ -279,7 +295,7 @@ async fn announce_invalid(
     }
 }
 
-async fn post_summary(http: &Http, data: &Data, code: &str, s: &Stats) {
+async fn post_summary(http: &Http, data: &Data, code: &str, s: &Stats, channel: ChannelId) {
     let t = &data.texts.gift;
     let embed = CreateEmbed::new()
         .title(t.code_summary_title.replace("{code}", code))
@@ -290,7 +306,6 @@ async fn post_summary(http: &Http, data: &Data, code: &str, s: &Stats) {
                 .replace("{failed}", &s.failed.to_string()),
         )
         .color(EMBED_COLOR);
-    let channel = data.config.channels.gift_codes;
     if let Err(e) = channel.send_message(http, CreateMessage::new().embed(embed)).await {
         warn!("résumé du code {code} : {e}");
     }

@@ -2,7 +2,6 @@ guild_id = 1538899491539779695
 verif_category = 1573352613959831634
 # Fichier SQLite (monter un PVC sur /data en prod).
 database_path = "data/bot.db"
-reminder_guilds = [1518955664012087477]
 
 [roles]
 verified = 1556360528958459955
@@ -46,19 +45,31 @@ key = "super_secret_bot_token_nobody_will_ever_find"
 [[alliances]]
 tag = "ACE"
 name = "Ascenders"
+kingdom = 2190
 
 [[alliances]]
 tag = "CEL"
 name = "Celestials"
+kingdom = 2190
 
 [[alliances]]
 tag = "SNO"
 name = "SNO"
+kingdom = 2190
 
 [[alliances]]
 tag = "CLT"
 name = "ChillTitans"
+kingdom = 2190
 
 [[alliances]]
 tag = "SMU"
 name = "AEGIS"
+kingdom = 2190
+
+# Serveur de l'alliance : rappels + codes cadeaux.
+[[guilds]]
+id = 1518955664012087477
+reminders = true
+# Salon des codes de ce serveur (détection + résumés) ; active /register et /unregister.
+gift_codes = 1574382950534094949

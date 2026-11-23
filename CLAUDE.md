@@ -12,15 +12,18 @@ Bot Discord en Rust (poise + serenity) pour l'onboarding d'un serveur de jeu.
 - Refus : suppression du salon uniquement, pas de kick
 - `guild_member_removal` : supprime le salon de vérif s'il existe
 - `/setup-roles` : bouton → menu éphémère pré-coché des langues (extensible via la config)
-- `/register id alliance [kingdom]` : lie un ou plusieurs Governor ID à un compte Discord
-  (kingdom par défaut = celui saisi à la vérif), vérifié auprès du jeu ; `/unregister`
+- `/register id alliance` : lie un ou plusieurs Governor ID à un compte Discord (kingdom = celui
+  de l'alliance dans la config), vérifié auprès du jeu ; `/unregister`
 - Codes cadeaux : détectés dans `channels.gift_codes` (y compris annonces suivies) et via
   l'API communautaire de partage (lecture seule) → réclamés pour tous les joueurs par un
-  worker unique, résumé posté dans le salon
+  worker unique, résumé posté dans chaque salon des codes (chiffres des joueurs inscrits depuis
+  ce serveur : `players.guild_id`, NULL = principal)
 - `/event add|list|skip|remove` (Gérer le serveur) : rappels d'events du jeu (modèles Bear Trap,
   Viking…, ou Custom), heures UTC, récurrence + délai avant ; tâche toutes les 30 s, anti-doublon
-  via `last_notified`. Disponible sur `reminder_guilds` (le bot peut être sur plusieurs serveurs ;
-  vérif/codes restent sur `guild_id`). Commandes enregistrées par serveur au `GuildCreate`
+  via `last_notified`.
+- Multi-serveur : `[[guilds]]` (id, `reminders`, `gift_codes`) active `/event` et/ou les codes
+  (`/register`, salon des codes) sur d'autres serveurs ; vérif et rôles restent sur `guild_id`.
+  Commandes enregistrées par serveur au `GuildCreate`
 
 ## Contraintes
 - Vérification sans état : custom_ids fixes, lien membre ↔ salon dans le topic du salon

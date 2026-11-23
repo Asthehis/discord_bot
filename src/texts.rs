@@ -57,7 +57,6 @@ pub struct GiftTexts {
     pub register_list: String,
     pub register_taken: String,
     pub register_bad_alliance: String,
-    pub register_need_kingdom: String,
     pub register_not_found: String,
     pub register_api_down: String,
     pub unregister_ok: String,

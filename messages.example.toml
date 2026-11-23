@@ -37,7 +37,6 @@ register_ok = "✅ ID `{id}` linked to your account (kingdom {kingdom}, {allianc
 register_list = "Your linked IDs:\n{list}"
 register_taken = "❌ ID `{id}` is already linked to another Discord account. Contact a moderator if this is a mistake."
 register_bad_alliance = "❌ Unknown alliance, pick one from the list."
-register_need_kingdom = "❌ Please fill in the `kingdom` option with your kingdom number."
 register_not_found = "❌ No player with ID `{id}` in kingdom {kingdom}. Check your ID and kingdom number."
 register_api_down = "⚠️ The game server didn't answer, please try again in a few minutes."
 unregister_ok = "✅ ID `{id}` unlinked from your account."

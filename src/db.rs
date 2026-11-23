@@ -59,13 +59,6 @@ pub async fn upsert_member(
     Ok(())
 }
 
-pub async fn member_kingdom(pool: &Pool, discord_id: u64) -> sqlx::Result<Option<i64>> {
-    sqlx::query_scalar("SELECT kingdom FROM members WHERE discord_id = ?")
-        .bind(discord_id as i64)
-        .fetch_optional(pool)
-        .await
-}
-
 // --- players ---------------------------------------------------------------
 
 pub struct Player {
@@ -83,23 +76,27 @@ pub async fn player_owner(pool: &Pool, fid: i64) -> sqlx::Result<Option<u64>> {
 }
 
 /// Crée ou met à jour le lien, et oublie les échecs liés à l'ancien kingdom.
+/// `guild` : serveur d'inscription (`None` = principal).
 pub async fn upsert_player(
     pool: &Pool,
     fid: i64,
     discord_id: u64,
     kingdom: i64,
     alliance: &str,
+    guild: Option<u64>,
 ) -> sqlx::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query(
-        "INSERT INTO players (fid, discord_id, kingdom, alliance) VALUES (?, ?, ?, ?)
+        "INSERT INTO players (fid, discord_id, kingdom, alliance, guild_id) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (fid) DO UPDATE SET
-           discord_id = excluded.discord_id, kingdom = excluded.kingdom, alliance = excluded.alliance",
+           discord_id = excluded.discord_id, kingdom = excluded.kingdom,
+           alliance = excluded.alliance, guild_id = excluded.guild_id",
     )
     .bind(fid)
     .bind(discord_id as i64)
     .bind(kingdom)
     .bind(alliance)
+    .bind(guild.map(|g| g as i64))
     .execute(&mut *tx)
     .await?;
     sqlx::query(
@@ -175,15 +172,24 @@ pub async fn active_codes(pool: &Pool) -> sqlx::Result<Vec<String>> {
     .await
 }
 
+/// Joueur à qui réclamer un code.
+#[derive(Debug, PartialEq, sqlx::FromRow)]
+pub struct Redeemable {
+    pub fid: i64,
+    pub kingdom: i64,
+    /// Serveur d'inscription (`None` = principal).
+    pub guild_id: Option<i64>,
+}
+
 /// Joueurs pour qui `code` reste à tenter, éventuellement limité à un `fid`.
 pub async fn players_to_redeem(
     pool: &Pool,
     code: &str,
     only_fid: Option<i64>,
-) -> sqlx::Result<Vec<(i64, i64)>> {
+) -> sqlx::Result<Vec<Redeemable>> {
     // Liste à garder alignée avec FINAL_STATUSES (vérifié par un test).
     sqlx::query_as(
-        "SELECT p.fid, p.kingdom FROM players p
+        "SELECT p.fid, p.kingdom, p.guild_id FROM players p
          LEFT JOIN redemptions r ON r.fid = p.fid AND r.code = ?
          WHERE (r.status IS NULL OR r.status NOT IN (
              'SUCCESS','RECEIVED','SAME_TYPE','CODE_INVALID','LEVEL_TOO_LOW',
@@ -226,8 +232,8 @@ mod tests {
     #[tokio::test]
     async fn redemption_queue() {
         let pool = mem().await;
-        upsert_player(&pool, 1, 100, 42, "ABC").await.unwrap();
-        upsert_player(&pool, 2, 100, 42, "ABC").await.unwrap();
+        upsert_player(&pool, 1, 100, 42, "ABC", None).await.unwrap();
+        upsert_player(&pool, 2, 100, 42, "ABC", Some(7)).await.unwrap();
         assert!(insert_code(&pool, "CODE", "channel").await.unwrap());
         assert!(!insert_code(&pool, "CODE", "share_api").await.unwrap());
 
@@ -235,7 +241,10 @@ mod tests {
         record_redemption(&pool, 1, "CODE", "SUCCESS").await.unwrap();
         record_redemption(&pool, 2, "CODE", "ERROR").await.unwrap();
         // ERROR est retenté, SUCCESS non.
-        assert_eq!(players_to_redeem(&pool, "CODE", None).await.unwrap(), vec![(2, 42)]);
+        assert_eq!(
+            players_to_redeem(&pool, "CODE", None).await.unwrap(),
+            vec![Redeemable { fid: 2, kingdom: 42, guild_id: Some(7) }]
+        );
         assert_eq!(players_to_redeem(&pool, "CODE", Some(1)).await.unwrap(), vec![]);
     }
 
@@ -243,7 +252,7 @@ mod tests {
     async fn final_statuses_are_not_retried() {
         use crate::giftapi::{InvalidReason, Outcome};
         let pool = mem().await;
-        upsert_player(&pool, 1, 100, 42, "ABC").await.unwrap();
+        upsert_player(&pool, 1, 100, 42, "ABC", None).await.unwrap();
         insert_code(&pool, "CODE", "channel").await.unwrap();
         for status in FINAL_STATUSES {
             record_redemption(&pool, 1, "CODE", status).await.unwrap();
@@ -268,19 +277,22 @@ mod tests {
     #[tokio::test]
     async fn reregister_clears_kingdom_mismatch() {
         let pool = mem().await;
-        upsert_player(&pool, 1, 100, 42, "ABC").await.unwrap();
+        upsert_player(&pool, 1, 100, 42, "ABC", None).await.unwrap();
         insert_code(&pool, "CODE", "channel").await.unwrap();
         record_redemption(&pool, 1, "CODE", "KINGDOM_MISMATCH").await.unwrap();
         assert!(players_to_redeem(&pool, "CODE", None).await.unwrap().is_empty());
 
-        upsert_player(&pool, 1, 100, 43, "ABC").await.unwrap();
-        assert_eq!(players_to_redeem(&pool, "CODE", None).await.unwrap(), vec![(1, 43)]);
+        upsert_player(&pool, 1, 100, 43, "ABC", None).await.unwrap();
+        assert_eq!(
+            players_to_redeem(&pool, "CODE", None).await.unwrap(),
+            vec![Redeemable { fid: 1, kingdom: 43, guild_id: None }]
+        );
     }
 
     #[tokio::test]
     async fn ownership() {
         let pool = mem().await;
-        upsert_player(&pool, 1, 100, 42, "ABC").await.unwrap();
+        upsert_player(&pool, 1, 100, 42, "ABC", None).await.unwrap();
         assert_eq!(player_owner(&pool, 1).await.unwrap(), Some(100));
         assert!(!delete_player(&pool, 1, 999).await.unwrap());
         assert!(delete_player(&pool, 1, 100).await.unwrap());

@@ -17,7 +17,7 @@ use tracing::{error, info, warn};
 
 use crate::{Context, Data, Error, db, texts::EventTexts};
 
-/// Nom de la commande, enregistrée seulement sur `reminder_guilds`.
+/// Nom de la commande, enregistrée seulement là où `reminders = true`.
 pub const COMMAND: &str = "event";
 
 const TICK: Duration = Duration::from_secs(30);
@@ -215,7 +215,7 @@ fn format_utc(ts: i64) -> String {
 
 /// Serveur courant, s'il a les rappels activés.
 fn reminder_guild(ctx: Context<'_>) -> Option<GuildId> {
-    ctx.guild_id().filter(|g| ctx.data().config.reminder_guilds.contains(g))
+    ctx.guild_id().filter(|&g| ctx.data().config.reminders_enabled(g))
 }
 
 async fn reply(ctx: Context<'_>, content: impl Into<String>) -> Result<(), Error> {
