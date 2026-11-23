@@ -22,6 +22,8 @@ pub struct Texts {
     pub events: EventTexts,
     /// `/setup` (admins) : anglais uniquement.
     pub setup: SetupTexts,
+    /// `/roles` et panneaux de rôles : anglais uniquement.
+    pub panels: PanelTexts,
     /// Textes côté membre, une entrée par clé de langue (`en` obligatoire).
     lang: HashMap<String, Lang>,
 }
@@ -103,6 +105,33 @@ pub struct EventTexts {
     pub bad_start: String,
     pub bad_every: String,
     pub start_past: String,
+}
+
+/// Placeholders : `{id}`, `{title}`, `{channel}`, `{role}`, `{emoji}`, `{roles}`.
+#[derive(Debug, Deserialize)]
+pub struct PanelTexts {
+    pub line: String,
+    pub empty: String,
+    pub created: String,
+    pub added: String,
+    pub updated: String,
+    pub removed: String,
+    pub deleted: String,
+    pub list_title: String,
+    pub list_line: String,
+    pub list_empty: String,
+    pub not_found: String,
+    pub not_in_panel: String,
+    pub full: String,
+    pub role_managed: String,
+    pub role_dangerous: String,
+    pub role_above_bot: String,
+    pub role_above_user: String,
+    pub bad_emoji: String,
+    pub message_gone: String,
+    pub given: String,
+    pub taken: String,
+    pub failed: String,
 }
 
 #[derive(Debug, Deserialize)]

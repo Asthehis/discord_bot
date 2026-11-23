@@ -503,3 +503,218 @@ pub async fn assign_unowned_players(pool: &Pool, guild: u64) -> sqlx::Result<u64
         .await?;
     Ok(res.rows_affected())
 }
+
+// --- role panels ----------------------------------------------------------
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Panel {
+    pub id: i64,
+    pub channel_id: i64,
+    pub message_id: i64,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct PanelEntry {
+    pub role_id: i64,
+    pub emoji: Option<String>,
+    pub label: String,
+}
+
+pub async fn insert_panel(
+    pool: &Pool,
+    guild: u64,
+    channel: u64,
+    message: u64,
+    title: &str,
+    description: &str,
+) -> sqlx::Result<i64> {
+    let res = sqlx::query(
+        "INSERT INTO role_panels (guild_id, channel_id, message_id, title, description)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(guild as i64)
+    .bind(channel as i64)
+    .bind(message as i64)
+    .bind(title)
+    .bind(description)
+    .execute(pool)
+    .await?;
+    Ok(res.last_insert_rowid())
+}
+
+pub async fn panels_of(pool: &Pool, guild: u64) -> sqlx::Result<Vec<Panel>> {
+    sqlx::query_as(
+        "SELECT id, channel_id, message_id, title, description
+         FROM role_panels WHERE guild_id = ? ORDER BY id",
+    )
+    .bind(guild as i64)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn panel(pool: &Pool, guild: u64, id: i64) -> sqlx::Result<Option<Panel>> {
+    sqlx::query_as(
+        "SELECT id, channel_id, message_id, title, description
+         FROM role_panels WHERE guild_id = ? AND id = ?",
+    )
+    .bind(guild as i64)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Rôles du panneau, dans l'ordre d'ajout.
+pub async fn panel_entries(pool: &Pool, panel: i64) -> sqlx::Result<Vec<PanelEntry>> {
+    sqlx::query_as(
+        "SELECT role_id, emoji, label FROM role_panel_entries WHERE panel_id = ? ORDER BY rowid",
+    )
+    .bind(panel)
+    .fetch_all(pool)
+    .await
+}
+
+/// Ajoute le rôle, ou met à jour son emoji/libellé en gardant sa place.
+pub async fn upsert_panel_entry(pool: &Pool, panel: i64, e: &PanelEntry) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO role_panel_entries (panel_id, role_id, emoji, label) VALUES (?, ?, ?, ?)
+         ON CONFLICT (panel_id, role_id) DO UPDATE SET emoji = excluded.emoji, label = excluded.label",
+    )
+    .bind(panel)
+    .bind(e.role_id)
+    .bind(&e.emoji)
+    .bind(&e.label)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_panel_entry(pool: &Pool, panel: i64, role: u64) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM role_panel_entries WHERE panel_id = ? AND role_id = ?")
+        .bind(panel)
+        .bind(role as i64)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Supprime le panneau et ses rôles.
+pub async fn delete_panel(pool: &Pool, guild: u64, id: i64) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM role_panels WHERE guild_id = ? AND id = ?")
+        .bind(guild as i64)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Le bouton `role` du message `message` fait-il bien partie d'un panneau du serveur ?
+pub async fn panel_has_role(
+    pool: &Pool,
+    guild: u64,
+    message: u64,
+    role: u64,
+) -> sqlx::Result<bool> {
+    let found: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM role_panel_entries e JOIN role_panels p ON p.id = e.panel_id
+         WHERE p.guild_id = ? AND p.message_id = ? AND e.role_id = ?",
+    )
+    .bind(guild as i64)
+    .bind(message as i64)
+    .bind(role as i64)
+    .fetch_optional(pool)
+    .await?;
+    Ok(found.is_some())
+}
+
+/// Rôle supprimé du serveur : retiré de tous les panneaux. Renvoie les panneaux touchés.
+pub async fn forget_panel_role(pool: &Pool, guild: u64, role: u64) -> sqlx::Result<Vec<i64>> {
+    let mut tx = pool.begin().await?;
+    let panels: Vec<i64> = sqlx::query_scalar(
+        "SELECT e.panel_id FROM role_panel_entries e JOIN role_panels p ON p.id = e.panel_id
+         WHERE p.guild_id = ? AND e.role_id = ?",
+    )
+    .bind(guild as i64)
+    .bind(role as i64)
+    .fetch_all(&mut *tx)
+    .await?;
+    for panel in &panels {
+        sqlx::query("DELETE FROM role_panel_entries WHERE panel_id = ? AND role_id = ?")
+            .bind(panel)
+            .bind(role as i64)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(panels)
+}
+
+#[cfg(test)]
+mod panel_tests {
+    use super::*;
+
+    async fn mem() -> Pool {
+        let opts = SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        sqlx::migrate!().run(&pool).await.unwrap();
+        pool
+    }
+
+    fn entry(role: i64, label: &str) -> PanelEntry {
+        PanelEntry {
+            role_id: role,
+            emoji: None,
+            label: label.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn panel_lifecycle() {
+        let pool = mem().await;
+        let id = insert_panel(&pool, 1, 2, 3, "Events", "").await.unwrap();
+        upsert_panel_entry(&pool, id, &entry(10, "Bear"))
+            .await
+            .unwrap();
+        upsert_panel_entry(&pool, id, &entry(11, "Viking"))
+            .await
+            .unwrap();
+        // Mise à jour : garde sa place.
+        upsert_panel_entry(&pool, id, &entry(10, "Bear Trap"))
+            .await
+            .unwrap();
+        let labels: Vec<_> = panel_entries(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.label)
+            .collect();
+        assert_eq!(labels, ["Bear Trap", "Viking"]);
+
+        assert!(panel_has_role(&pool, 1, 3, 10).await.unwrap());
+        assert!(
+            !panel_has_role(&pool, 9, 3, 10).await.unwrap(),
+            "other guild"
+        );
+        assert!(
+            !panel_has_role(&pool, 1, 3, 12).await.unwrap(),
+            "role not on panel"
+        );
+
+        assert_eq!(forget_panel_role(&pool, 1, 11).await.unwrap(), [id]);
+        assert_eq!(panel_entries(&pool, id).await.unwrap().len(), 1);
+
+        assert!(!delete_panel(&pool, 9, id).await.unwrap());
+        assert!(delete_panel(&pool, 1, id).await.unwrap());
+        assert!(
+            panel_entries(&pool, id).await.unwrap().is_empty(),
+            "cascade"
+        );
+    }
+}

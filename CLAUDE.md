@@ -6,7 +6,7 @@ Bot Discord en Rust (poise + serenity) pour l'onboarding d'un serveur de jeu.
 Multi-serveur : chaque fonctionnalité s'active par serveur avec `/setup` (Administrateur),
 réglages en base (`guild_settings`, `guild_languages`, cache mémoire dans `settings::Store`).
 Commandes enregistrées par serveur (au `GuildCreate` et après chaque `/setup`) : `/setup`
-partout, `/register` + `/unregister` si salon des codes, `/event` si rappels actifs.
+partout, `/roles` partout, `/register` + `/unregister` si salon des codes, `/event` si rappels actifs.
 
 - `/setup verification` (salon, catégorie, rôles Verified/Guest/Mod, salons welcome/règles) :
   poste le message avec le bouton de vérification
@@ -33,6 +33,11 @@ partout, `/register` + `/unregister` si salon des codes, `/event` si rappels act
   quotidiens masqués), édité par le bot quand son contenu change (ajout/skip/suppression, event
   passé), reposté s'il a été supprimé
 - `/setup show|disable|post` : voir, désactiver, reposter les messages
+- `/roles create|add|remove|delete|list` (Gérer les rôles) : panneaux de rôles en libre-service,
+  un message avec un bouton par rôle (25 max, `custom_id` = `rp:<role_id>` vérifié en base) ;
+  clic = donne/retire le rôle. Refusés : @everyone, rôles d'intégration, rôles avec permissions
+  de modération, rôles au-dessus du bot ou de l'auteur. Rôle supprimé → retiré des panneaux.
+  Combinable avec l'option `role` de `/event add` pour ne pinger que les volontaires
 
 ## Contraintes
 - Vérification sans état : custom_ids fixes, lien membre ↔ salon dans le topic du salon

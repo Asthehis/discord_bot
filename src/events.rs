@@ -607,7 +607,7 @@ async fn post_board(
     Ok((msg.id, pinned))
 }
 
-fn is_unknown_message(e: &serenity::Error) -> bool {
+pub(crate) fn is_unknown_message(e: &serenity::Error) -> bool {
     matches!(
         e,
         serenity::Error::Http(serenity::HttpError::UnsuccessfulRequest(r)) if r.error.code == 10008

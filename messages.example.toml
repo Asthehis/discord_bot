@@ -81,6 +81,31 @@ bad_start = "❌ Invalid start. Use `YYYY-MM-DD HH:MM` or `HH:MM`, in UTC (game 
 bad_every = "❌ Invalid repeat. Use e.g. `2d`, `1w`, `12h` (1 hour minimum) or `once`."
 start_past = "❌ This date is already past."
 
+[panels]
+# Ligne du message du panneau, une par rôle ({emoji} = • sans emoji).
+line = "{emoji} {role}"
+empty = "*No roles yet.*"
+created = "✅ Panel **#{id}** posted in {channel}. Add roles with `/roles add`."
+added = "✅ {role} added to panel **#{id}**."
+updated = "✅ {role} updated on panel **#{id}**."
+removed = "🗑️ {role} removed from panel **#{id}**."
+deleted = "🗑️ Panel **#{id}** deleted."
+list_title = "🎭 Role panels"
+list_line = "`#{id}` **{title}** in {channel} — {roles}"
+list_empty = "No role panels yet. Create one with `/roles create`."
+not_found = "❌ Unknown panel."
+not_in_panel = "❌ {role} isn't on this panel."
+full = "❌ This panel already has 25 roles (Discord limit): create another one."
+role_managed = "❌ {role} is @everyone or managed by an integration, it can't be self-assigned."
+role_dangerous = "❌ {role} has moderation permissions, it can't be self-assigned."
+role_above_bot = "❌ {role} is above my highest role: move my role above it in Server Settings → Roles."
+role_above_user = "❌ {role} is above your highest role."
+bad_emoji = "❌ Discord rejected this emoji: use a standard emoji or one from this server."
+message_gone = "❌ The panel message was deleted: remove the panel with `/roles delete` and create a new one."
+given = "✅ You now have {role}."
+taken = "➖ {role} removed."
+failed = "❌ I couldn't change this role, please ask an admin."
+
 [lang.en]
 verif_title = "Welcome to the server!"
 verif_description = """

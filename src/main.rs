@@ -7,6 +7,7 @@ mod giftapi;
 mod import;
 mod members;
 mod register;
+mod rolepanel;
 mod roles;
 mod settings;
 mod setup;
@@ -71,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
                 register::register(),
                 register::unregister(),
                 events::event(),
+                rolepanel::roles(),
             ],
             event_handler: |fw, event| Box::pin(event_handler(fw, event)),
             on_error: |err| Box::pin(on_error(err)),
@@ -129,6 +131,8 @@ async fn event_handler(
                     verification::on_component(ctx, data, i).await?;
                 } else if roles::handles(&i.data.custom_id) {
                     roles::on_component(ctx, data, i).await?;
+                } else if rolepanel::handles(&i.data.custom_id) {
+                    rolepanel::on_component(ctx, data, i).await?;
                 }
             }
             Interaction::Modal(i) if verification::handles(&i.data.custom_id) => {
@@ -143,6 +147,9 @@ async fn event_handler(
         FullEvent::Message { new_message } => {
             gift::on_message(ctx, data, new_message).await?;
         }
+        FullEvent::GuildRoleDelete { guild_id, removed_role_id, .. } => {
+            rolepanel::on_role_delete(&ctx.http, data, *guild_id, *removed_role_id).await?;
+        }
         FullEvent::GuildMemberRemoval { guild_id, user, .. } => {
             members::on_removal(ctx, data, *guild_id, user).await?;
         }
@@ -151,7 +158,7 @@ async fn event_handler(
     Ok(())
 }
 
-/// `/setup` partout ; `/register` et `/event` là où la fonctionnalité est active.
+/// `/setup` et `/roles` partout ; `/register` et `/event` là où la fonctionnalité est active.
 pub async fn register_commands(
     ctx: &serenity::Context,
     data: &Data,
