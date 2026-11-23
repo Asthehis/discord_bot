@@ -433,13 +433,15 @@ pub struct GuildRow {
     pub roles_channel: Option<i64>,
     pub gift_channel: Option<i64>,
     pub reminders: bool,
+    pub board_channel: Option<i64>,
+    pub board_message: Option<i64>,
 }
 
 pub async fn guild_rows(pool: &Pool) -> sqlx::Result<Vec<GuildRow>> {
     sqlx::query_as(
         "SELECT guild_id, verif_channel, verif_category, role_verified, role_guest,
                 role_moderator, welcome_channel, rules_channel, roles_channel,
-                gift_channel, reminders
+                gift_channel, reminders, board_channel, board_message
          FROM guild_settings",
     )
     .fetch_all(pool)
@@ -459,8 +461,9 @@ pub async fn save_guild(pool: &Pool, row: &GuildRow, languages: &[(String, i64)]
     sqlx::query(
         "INSERT OR REPLACE INTO guild_settings
            (guild_id, verif_channel, verif_category, role_verified, role_guest, role_moderator,
-            welcome_channel, rules_channel, roles_channel, gift_channel, reminders)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            welcome_channel, rules_channel, roles_channel, gift_channel, reminders,
+            board_channel, board_message)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(row.guild_id)
     .bind(row.verif_channel)
@@ -473,6 +476,8 @@ pub async fn save_guild(pool: &Pool, row: &GuildRow, languages: &[(String, i64)]
     .bind(row.roles_channel)
     .bind(row.gift_channel)
     .bind(row.reminders)
+    .bind(row.board_channel)
+    .bind(row.board_message)
     .execute(&mut *tx)
     .await?;
     sqlx::query("DELETE FROM guild_languages WHERE guild_id = ?")

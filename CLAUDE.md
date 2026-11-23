@@ -29,6 +29,9 @@ partout, `/register` + `/unregister` si salon des codes, `/event` si rappels act
 - `/setup reminders` puis `/event add|list|skip|remove` (Gérer le serveur) : rappels d'events
   du jeu (modèles Bear Trap, Viking…, ou Custom), heures UTC, récurrence + délai avant ; tâche
   toutes les 30 s, anti-doublon via `last_notified`
+- `/event board channel` : tableau épinglé des prochains events (une ligne par event, events
+  quotidiens masqués), édité par le bot quand son contenu change (ajout/skip/suppression, event
+  passé), reposté s'il a été supprimé
 - `/setup show|disable|post` : voir, désactiver, reposter les messages
 
 ## Contraintes

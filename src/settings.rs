@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::RwLock};
 
-use poise::serenity_prelude::{ChannelId, GuildId, RoleId};
+use poise::serenity_prelude::{ChannelId, GuildId, MessageId, RoleId};
 use tracing::{info, warn};
 
 use crate::{config::Config, db};
@@ -18,6 +18,8 @@ pub struct GuildSettings {
     pub gift_channel: Option<ChannelId>,
     /// Active `/event`.
     pub reminders: bool,
+    /// Tableau des events : salon + message épinglé.
+    pub board: Option<(ChannelId, MessageId)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +54,8 @@ impl GuildSettings {
             languages,
             gift_channel: ch(row.gift_channel),
             reminders: row.reminders,
+            board: ch(row.board_channel)
+                .zip(row.board_message.map(|id| MessageId::new(id as u64))),
         }
     }
 
@@ -71,6 +75,8 @@ impl GuildSettings {
             roles_channel: ch(self.roles_channel),
             gift_channel: ch(self.gift_channel),
             reminders: self.reminders,
+            board_channel: ch(self.board.map(|b| b.0)),
+            board_message: self.board.map(|b| b.1.get() as i64),
         };
         let languages = self.languages.iter().map(|(k, r)| (k.clone(), r.get() as i64)).collect();
         (row, languages)
@@ -106,6 +112,11 @@ impl Store {
 
     fn is_known(&self, guild: GuildId) -> bool {
         self.cache.read().unwrap().contains_key(&guild)
+    }
+
+    /// Serveurs qui ont un tableau des events.
+    pub fn guilds_with_board(&self) -> Vec<GuildId> {
+        self.cache.read().unwrap().iter().filter(|(_, s)| s.board.is_some()).map(|(g, _)| *g).collect()
     }
 
     /// Salons des codes de tous les serveurs.
@@ -217,6 +228,7 @@ mod tests {
             languages: vec![("fr".into(), RoleId::new(10))],
             gift_channel: None,
             reminders: true,
+            board: Some((ChannelId::new(11), MessageId::new(12))),
         };
         let (row, langs) = s.to_row(guild);
         let langs = langs.into_iter().map(|(k, r)| (k, RoleId::new(r as u64))).collect();

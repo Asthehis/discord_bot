@@ -60,6 +60,14 @@ reminder = """
 {emoji} **{name}** starts {relative} ({time})!
 {message}
 {ping}"""
+board_title = "📅 Upcoming events"
+# Une ligne par event : {emoji} {name} {time} (date et heure) {relative} (« dans 2 jours »).
+board_line = "{emoji} **{name}** — {time} · {relative}"
+board_empty = "No upcoming events."
+board_footer = "Times are shown in your own time zone · updated automatically"
+board_set = "📌 Event board posted in {channel}."
+board_removed = "🗑️ Event board removed."
+board_pin_failed = "⚠️ I couldn't pin it: give me the *Pin Messages* (or *Manage Messages*) permission in that channel."
 added = "✅ Reminder **#{id}** {emoji} **{name}** created: next {next}, {every}, {before} min before in {channel} {ping}"
 list_title = "📅 Event reminders"
 list_line = "`#{id}` {emoji} **{name}** — {next} · {every} · {before} min before in {channel} {ping}"

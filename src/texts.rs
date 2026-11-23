@@ -84,6 +84,13 @@ pub struct SetupTexts {
 #[derive(Debug, Deserialize)]
 pub struct EventTexts {
     pub reminder: String,
+    pub board_title: String,
+    pub board_line: String,
+    pub board_empty: String,
+    pub board_footer: String,
+    pub board_set: String,
+    pub board_removed: String,
+    pub board_pin_failed: String,
     pub added: String,
     pub list_title: String,
     pub list_line: String,

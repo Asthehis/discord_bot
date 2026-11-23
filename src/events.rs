@@ -5,13 +5,15 @@
 //! redémarrage) et sert aussi à sauter une occurrence.
 
 use std::{
-    sync::Arc,
+    collections::HashMap,
+    sync::{Arc, LazyLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use poise::serenity_prelude::{
     self as serenity, AutocompleteChoice, ChannelId, CreateAllowedMentions,
-    CreateAutocompleteResponse, CreateEmbed, CreateMessage, GuildId, RoleId,
+    CreateAutocompleteResponse, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage,
+    GuildId, Mentionable, MessageId, RoleId,
 };
 use tracing::{error, info, warn};
 
@@ -25,6 +27,8 @@ const TICK: Duration = Duration::from_secs(30);
 const GRACE: i64 = 120;
 const MIN_INTERVAL: i64 = 3600;
 const DEFAULT_LEAD_MINUTES: u32 = 30;
+
+const EMBED_COLOR: u32 = 0x5865F2;
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 3600;
@@ -113,6 +117,22 @@ impl db::Event {
     /// Prochaine occurrence pas encore rappelée ni sautée.
     fn next(&self, now: i64) -> Option<i64> {
         occurrence_after(self.first_start, self.interval_secs, now.max(self.last_notified))
+    }
+
+    /// Prochain début affiché dans le tableau : l'occurrence à venir, même déjà rappelée,
+    /// sauf si elle a été sautée (marquée alors que son rappel n'était pas encore dû).
+    fn board_next(&self, now: i64) -> Option<i64> {
+        let s = occurrence_after(self.first_start, self.interval_secs, now)?;
+        if s <= self.last_notified && now < s - self.lead_secs {
+            occurrence_after(self.first_start, self.interval_secs, s)
+        } else {
+            Some(s)
+        }
+    }
+
+    /// Events quotidiens (ou plus fréquents) : pas dans le tableau.
+    fn on_board(&self) -> bool {
+        self.interval_secs == 0 || self.interval_secs > DAY
     }
 
     fn channel(&self) -> ChannelId {
@@ -229,7 +249,7 @@ async fn reply(ctx: Context<'_>, content: impl Into<String>) -> Result<(), Error
     rename = "event",
     guild_only,
     default_member_permissions = "MANAGE_GUILD",
-    subcommands("add", "list", "skip", "remove"),
+    subcommands("add", "list", "skip", "remove", "board"),
     subcommand_required
 )]
 pub async fn event(_ctx: Context<'_>) -> Result<(), Error> {
@@ -318,7 +338,9 @@ async fn add(
         .replace("{before}", &(lead / MINUTE).to_string())
         .replace("{channel}", &format!("<#{channel_id}>"))
         .replace("{ping}", &role.map_or_else(String::new, |r| format!("<@&{}>", r.id)));
-    reply(ctx, text).await
+    reply(ctx, text).await?;
+    refresh_board(ctx.http(), data, guild).await;
+    Ok(())
 }
 
 /// List this server's event reminders.
@@ -396,7 +418,9 @@ async fn skip(
         .replace("{name}", &e.name)
         .replace("{skipped}", &format!("<t:{skipped}:F>"))
         .replace("{next}", &following);
-    reply(ctx, text).await
+    reply(ctx, text).await?;
+    refresh_board(ctx.http(), data, guild).await;
+    Ok(())
 }
 
 /// Delete a reminder.
@@ -418,6 +442,50 @@ async fn remove(
     db::delete_event(&data.db, guild.get(), id).await?;
     info!(%guild, id, name = e.name, user = %ctx.author().id, "reminder deleted");
     let text = t.removed.replace("{id}", &id.to_string()).replace("{name}", &e.name);
+    reply(ctx, text).await?;
+    refresh_board(ctx.http(), data, guild).await;
+    Ok(())
+}
+
+/// Post a pinned board of upcoming events, kept up to date (no channel = remove it).
+#[poise::command(slash_command, guild_only)]
+async fn board(
+    ctx: Context<'_>,
+    #[description = "Channel for the board (leave empty to remove it)"]
+    #[channel_types("Text", "News")]
+    channel: Option<serenity::GuildChannel>,
+) -> Result<(), Error> {
+    let data = ctx.data();
+    let t = &data.texts.events;
+    let Some(guild) = reminder_guild(ctx) else {
+        return reply(ctx, &t.not_enabled).await;
+    };
+    ctx.defer_ephemeral().await?;
+    let mut boards = BOARDS.lock().await;
+
+    // Un seul tableau par serveur : l'ancien message disparaît.
+    if let Some((old_channel, old_message)) = data.guilds.get(guild).board {
+        let _ = old_channel.delete_message(ctx.http(), old_message).await;
+    }
+    let Some(channel) = channel else {
+        data.guilds.update(guild, |s| s.board = None).await?;
+        boards.remove(&guild);
+        info!(%guild, user = %ctx.author().id, "event board removed");
+        return reply(ctx, &t.board_removed).await;
+    };
+
+    let events = db::events_of(&data.db, guild.get()).await?;
+    let (embed, content) = render_board(t, &events, now_secs());
+    let (message, pinned) = post_board(ctx.http(), channel.id, embed).await?;
+    data.guilds.update(guild, |s| s.board = Some((channel.id, message))).await?;
+    boards.insert(guild, content);
+    info!(%guild, user = %ctx.author().id, channel = %channel.id, "event board posted");
+
+    let mut text = t.board_set.replace("{channel}", &channel.mention().to_string());
+    if !pinned {
+        text.push('\n');
+        text.push_str(&t.board_pin_failed);
+    }
     reply(ctx, text).await
 }
 
@@ -452,6 +520,10 @@ pub fn spawn_scheduler(http: Arc<serenity::Http>, data: Data) {
             if let Err(e) = run_due(&http, &data).await {
                 error!("reminders: {e:#}");
             }
+            // Après chaque event, le tableau passe à l'occurrence suivante.
+            for guild in data.guilds.guilds_with_board() {
+                refresh_board(&http, &data, guild).await;
+            }
         }
     });
 }
@@ -479,6 +551,103 @@ async fn run_due(http: &serenity::Http, data: &Data) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+// --- tableau des events --------------------------------------------------------
+
+/// Dernière description postée par serveur : le message n'est édité que si elle change.
+/// Le verrou évite aussi deux reposts simultanés.
+static BOARDS: LazyLock<tokio::sync::Mutex<HashMap<GuildId, String>>> =
+    LazyLock::new(Default::default);
+
+/// Met à jour le tableau du serveur s'il en a un (reposté s'il a été supprimé).
+pub async fn refresh_board(http: &serenity::Http, data: &Data, guild: GuildId) {
+    let Some((channel, message)) = data.guilds.get(guild).board else {
+        return;
+    };
+    let mut boards = BOARDS.lock().await;
+    let events = match db::events_of(&data.db, guild.get()).await {
+        Ok(events) => events,
+        Err(e) => return error!(%guild, "event board: {e}"),
+    };
+    let (embed, content) = render_board(&data.texts.events, &events, now_secs());
+    if boards.get(&guild) == Some(&content) {
+        return;
+    }
+    boards.insert(guild, content);
+
+    match channel.edit_message(http, message, EditMessage::new().embed(embed.clone())).await {
+        Ok(_) => {}
+        Err(e) if is_unknown_message(&e) => match post_board(http, channel, embed).await {
+            Ok((message, _)) => {
+                if let Err(e) = data.guilds.update(guild, |s| s.board = Some((channel, message))).await {
+                    error!(%guild, "saving the event board: {e}");
+                }
+                info!(%guild, "event board was deleted, posted again");
+            }
+            Err(e) => warn!(%guild, "posting the event board again: {e}"),
+        },
+        Err(e) => warn!(%guild, "updating the event board: {e}"),
+    }
+}
+
+async fn post_board(
+    http: &serenity::Http,
+    channel: ChannelId,
+    embed: CreateEmbed,
+) -> serenity::Result<(MessageId, bool)> {
+    let msg = channel.send_message(http, CreateMessage::new().embed(embed)).await?;
+    let pinned = match msg.pin(http).await {
+        Ok(()) => true,
+        Err(e) => {
+            warn!(channel = %channel, "pinning the event board: {e}");
+            false
+        }
+    };
+    Ok((msg.id, pinned))
+}
+
+fn is_unknown_message(e: &serenity::Error) -> bool {
+    matches!(
+        e,
+        serenity::Error::Http(serenity::HttpError::UnsuccessfulRequest(r)) if r.error.code == 10008
+    )
+}
+
+/// Embed du tableau + sa description (pour savoir s'il a changé).
+fn render_board(t: &EventTexts, events: &[db::Event], now: i64) -> (CreateEmbed, String) {
+    let mut rows: Vec<(i64, &db::Event)> = events
+        .iter()
+        .filter(|e| e.on_board())
+        .filter_map(|e| Some((e.board_next(now)?, e)))
+        .collect();
+    rows.sort_by_key(|(start, _)| *start);
+
+    let mut description = String::new();
+    for (start, e) in rows {
+        let line = t
+            .board_line
+            .replace("{emoji}", &e.emoji)
+            .replace("{name}", &e.name)
+            .replace("{time}", &format!("<t:{start}:F>"))
+            .replace("{relative}", &format!("<t:{start}:R>"));
+        // Limite Discord d'une description d'embed.
+        if description.len() + line.len() > 4000 {
+            description.push('…');
+            break;
+        }
+        description.push_str(&line);
+        description.push('\n');
+    }
+    if description.is_empty() {
+        description = t.board_empty.clone();
+    }
+    let embed = CreateEmbed::new()
+        .title(&t.board_title)
+        .description(&description)
+        .footer(CreateEmbedFooter::new(&t.board_footer))
+        .color(EMBED_COLOR);
+    (embed, description)
 }
 
 fn render_reminder(t: &EventTexts, e: &db::Event, start: i64) -> String {
@@ -568,6 +737,24 @@ mod tests {
         e.last_notified = skipped;
         assert_eq!(e.due(10_000), None);
         assert_eq!(e.next(0), Some(10_000 + DAY));
+    }
+
+    #[test]
+    fn board_skips_daily_and_skipped() {
+        let t = crate::texts::tests::example_texts().events;
+        let lead = 30 * MINUTE;
+        let mut bear = ev(10_000, 2 * DAY, lead, 0);
+        let mut daily = ev(5_000, DAY, 0, 0);
+        daily.name = "Daily Reset".into();
+        let (_, text) = render_board(&t, &[bear.clone(), daily], 0);
+        assert!(text.contains("Bear Trap") && !text.contains("Daily Reset"), "{text}");
+        assert!(text.contains("<t:10000:R>"), "{text}");
+
+        // Déjà rappelée (fenêtre du rappel) : toujours affichée.
+        bear.last_notified = 10_000;
+        assert_eq!(bear.board_next(10_000 - 10 * MINUTE), Some(10_000));
+        // Sautée avant son rappel : on affiche la suivante.
+        assert_eq!(bear.board_next(0), Some(10_000 + 2 * DAY));
     }
 
     #[test]
