@@ -1,4 +1,3 @@
-mod commands;
 mod config;
 mod db;
 mod discord_log;
@@ -9,6 +8,8 @@ mod import;
 mod members;
 mod register;
 mod roles;
+mod settings;
+mod setup;
 mod texts;
 mod verification;
 
@@ -26,6 +27,8 @@ pub struct State {
     pub db: db::Pool,
     pub gift_api: GiftApi,
     pub jobs: gift::JobSender,
+    /// Réglages par serveur (`/setup`).
+    pub guilds: settings::Store,
 }
 
 pub type Data = Arc<State>;
@@ -44,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::load()?;
-    let logs_channel = config.channels.logs;
+    let logs_channel = config.logs_channel();
 
     // `discord-verif-bot import …` : import de l'ancienne base, sans Discord.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -52,18 +55,19 @@ async fn main() -> anyhow::Result<()> {
         return import::run(&config, &args[1..]).await;
     }
 
-    let token = std::env::var("DISCORD_TOKEN").map_err(|_| anyhow::anyhow!("DISCORD_TOKEN absent"))?;
+    let token = std::env::var("DISCORD_TOKEN").map_err(|_| anyhow::anyhow!("DISCORD_TOKEN is not set"))?;
     let texts = Texts::load(&config)?;
     let db = db::connect(&config.database_path).await?;
+    let guilds = settings::Store::load(db.clone()).await?;
+    settings::import_legacy(&config, &guilds).await?;
     let gift_api = GiftApi::new(config.gift.encrypt_key.clone())?;
     let (jobs, jobs_rx) = tokio::sync::mpsc::unbounded_channel();
-    let data: Data = Arc::new(State { config, texts, db, gift_api, jobs });
+    let data: Data = Arc::new(State { config, texts, db, gift_api, jobs, guilds });
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![
-                commands::setup_verification(),
-                commands::setup_roles(),
+                setup::setup(),
                 register::register(),
                 register::unregister(),
                 events::event(),
@@ -78,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(channel) = logs_channel {
                     discord_log::spawn_sender(ctx.http.clone(), channel, log_rx);
                 }
-                info!("connecté en tant que {}", ready.user.name);
+                info!("logged in as {}", ready.user.name);
                 // Appelé une seule fois, au premier Ready.
                 gift::spawn_worker(ctx.http.clone(), data.clone(), jobs_rx);
                 gift::spawn_share_api_poller(data.clone());
@@ -101,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
     let shard_manager = client.shard_manager.clone();
     tokio::spawn(async move {
         wait_for_shutdown().await;
-        info!("signal d'arrêt reçu, déconnexion");
+        info!("shutdown signal received, disconnecting");
         shard_manager.shutdown_all().await;
     });
 
@@ -147,43 +151,37 @@ async fn event_handler(
     Ok(())
 }
 
-/// Principal : vérif, rôles, codes. Selon `guilds` : `/event` et/ou `/register`.
-async fn register_commands(
+/// `/setup` partout ; `/register` et `/event` là où la fonctionnalité est active.
+pub async fn register_commands(
     ctx: &serenity::Context,
     data: &Data,
     commands: &[poise::Command<Data, Error>],
     guild: GuildId,
 ) {
-    let cfg = &data.config;
-    let main = guild == cfg.guild_id;
-    let gift = cfg.gift_channel(guild).is_some();
-    let reminders = cfg.reminders_enabled(guild);
-    if !main && !gift && !reminders {
-        return;
-    }
+    let settings = data.guilds.get(guild);
     let list: Vec<_> = commands
         .iter()
         .filter(|c| match c.name.as_ref() {
-            events::COMMAND => reminders,
-            name if register::COMMANDS.contains(&name) => gift,
-            _ => main,
+            events::COMMAND => settings.reminders,
+            name if register::COMMANDS.contains(&name) => settings.gift_channel.is_some(),
+            _ => true,
         })
         .filter_map(|c| c.create_as_slash_command())
         .collect();
     match guild.set_commands(&ctx.http, list).await {
-        Ok(cmds) => info!(%guild, count = cmds.len(), "commandes enregistrées"),
-        Err(e) => error!(%guild, "enregistrement des commandes : {e}"),
+        Ok(cmds) => info!(%guild, count = cmds.len(), "commands registered"),
+        Err(e) => error!(%guild, "registering commands: {e}"),
     }
 }
 
 async fn on_error(err: poise::FrameworkError<'_, Data, Error>) {
     match err {
         poise::FrameworkError::EventHandler { error, event, .. } => {
-            error!(event = event.snake_case_name(), "erreur event handler : {error:#}");
+            error!(event = event.snake_case_name(), "event handler error: {error:#}");
         }
         other => {
             if let Err(e) = poise::builtins::on_error(other).await {
-                error!("erreur dans on_error : {e}");
+                error!("error in on_error: {e}");
             }
         }
     }
@@ -194,7 +192,7 @@ async fn wait_for_shutdown() {
     #[cfg(unix)]
     {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("installation du handler SIGTERM");
+            .expect("installing the SIGTERM handler");
         tokio::select! {
             _ = ctrl_c => {}
             _ = term.recv() => {}

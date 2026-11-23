@@ -13,18 +13,22 @@ pub async fn on_update(
     data: &Data,
     event: &GuildMemberUpdateEvent,
 ) -> Result<(), Error> {
-    let cfg = &data.config;
-    if event.guild_id != cfg.guild_id || !verification::is_validated(data, &event.roles) {
+    let settings = data.guilds.get(event.guild_id);
+    let Some(v) = &settings.verification else {
+        return Ok(());
+    };
+    if !verification::is_validated(v, &event.roles) {
         return Ok(());
     }
-    let Some(channel) = verification::find_pending_channel(ctx, data, event.user.id) else {
+    let Some(channel) = verification::find_pending_channel(ctx, event.guild_id, v, event.user.id)
+    else {
         return Ok(());
     };
 
     // La suppression sert de verrou : si deux updates arrivent avant que le cache ne
     // soit à jour, seule la première réussit et poste le welcome.
     if let Err(e) = channel.delete(ctx).await {
-        debug!(user = %event.user.id, "salon de vérif déjà supprimé ({e})");
+        debug!(user = %event.user.id, "verification channel already deleted ({e})");
         return Ok(());
     }
 
@@ -33,11 +37,13 @@ pub async fn on_update(
         .common
         .welcome
         .replace("{user}", &event.user.id.mention().to_string())
-        .replace("{rules}", &cfg.channels.rules.mention().to_string())
-        .replace("{roles}", &cfg.channels.roles.mention().to_string());
+        .replace("{rules}", &v.rules.mention().to_string())
+        .replace(
+            "{roles}",
+            &settings.roles_channel.map_or_else(String::new, |c| c.mention().to_string()),
+        );
 
-    cfg.channels
-        .general_chat
+    v.welcome
         .send_message(
             ctx,
             CreateMessage::new()
@@ -54,13 +60,13 @@ pub async fn on_removal(
     guild_id: GuildId,
     user: &User,
 ) -> Result<(), Error> {
-    if guild_id != data.config.guild_id {
+    let Some(v) = data.guilds.get(guild_id).verification else {
         return Ok(());
-    }
-    if let Some(channel) = verification::find_pending_channel(ctx, data, user.id)
+    };
+    if let Some(channel) = verification::find_pending_channel(ctx, guild_id, &v, user.id)
         && let Err(e) = channel.delete(ctx).await
     {
-        debug!(user = %user.id, "salon de vérif déjà supprimé ({e})");
+        debug!(user = %user.id, "verification channel already deleted ({e})");
     }
     Ok(())
 }

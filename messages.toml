@@ -13,7 +13,6 @@ button_refuse = "Refuse"
 mod_only = "Only moderators can use these buttons."
 member_left = "This member is no longer on the server."
 action_failed = "Action failed, check the bot's permissions and role position."
-setup_done = "Message posted."
 roles_title = "🌐 Languages"
 roles_description = "Pick the language(s) you speak to unlock the matching channels. You can change your choice at any time."
 roles_button = "Choose my languages"
@@ -32,6 +31,15 @@ Run `/register`, enter your Governor ID, then select your alliance. This done, y
 Head to {roles} and select your language(s) to unlock language channels.
 """
 
+
+[setup]
+saved = "✅ Saved."
+posted = "✅ Saved, message posted in {channel}."
+verification_incomplete = "❌ Verification isn't set up yet on this server: the first time, fill in every option (missing: {missing})."
+languages_empty = "❌ No language role yet: link at least one with `/setup language` first."
+language_unknown = "❌ Unknown language, pick one from the list."
+not_configured = "❌ This isn't set up on this server yet."
+show_title = "⚙️ Bot settings for this server"
 
 [events]
 # {relative} = « in 30 minutes » dans la langue et le fuseau de chaque membre.

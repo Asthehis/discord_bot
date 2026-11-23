@@ -23,7 +23,7 @@ pub async fn register(
     let fill = |s: &str| s.replace("{id}", &id.to_string());
 
     // Commande enregistrée seulement là où il y a un salon des codes.
-    let Some(guild) = ctx.guild_id().filter(|&g| data.config.gift_channel(g).is_some()) else {
+    let Some(guild) = ctx.guild_id().filter(|&g| data.guilds.get(g).gift_channel.is_some()) else {
         return Ok(());
     };
     let Some(alliance) = data.config.alliance(&alliance) else {
@@ -42,17 +42,16 @@ pub async fn register(
             return reply(ctx, &msg).await;
         }
         Outcome::Error(e) => {
-            tracing::warn!(fid, "probe /register : {e}");
+            tracing::warn!(fid, "/register probe: {e}");
             return reply(ctx, &t.register_api_down).await;
         }
         // Toute autre réponse (en pratique « CDK NOT FOUND ») : le joueur existe.
         _ => {}
     }
 
-    let origin = (guild != data.config.guild_id).then_some(guild.get());
-    db::upsert_player(&data.db, fid, user_id, kingdom, &alliance.tag, origin).await?;
+    db::upsert_player(&data.db, fid, user_id, kingdom, &alliance.tag, Some(guild.get())).await?;
     let _ = data.jobs.send(Job::Player { fid });
-    tracing::info!(fid, user = user_id, kingdom, alliance = alliance.tag, %guild, "joueur enregistré");
+    tracing::info!(fid, user = user_id, kingdom, alliance = alliance.tag, %guild, "player registered");
 
     let mut msg = fill(&t.register_ok)
         .replace("{kingdom}", &kingdom.to_string())
@@ -76,7 +75,7 @@ pub async fn unregister(
     let data = ctx.data();
     let t = &data.texts.gift;
     let msg = if db::delete_player(&data.db, id as i64, ctx.author().id.get()).await? {
-        tracing::info!(fid = id, user = %ctx.author().id, "joueur retiré");
+        tracing::info!(fid = id, user = %ctx.author().id, "player unregistered");
         &t.unregister_ok
     } else {
         &t.unregister_not_yours

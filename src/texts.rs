@@ -20,6 +20,8 @@ pub struct Texts {
     pub gift: GiftTexts,
     /// `/event` et rappels : anglais uniquement.
     pub events: EventTexts,
+    /// `/setup` (admins) : anglais uniquement.
+    pub setup: SetupTexts,
     /// Textes côté membre, une entrée par clé de langue (`en` obligatoire).
     lang: HashMap<String, Lang>,
 }
@@ -37,7 +39,6 @@ pub struct Common {
     pub mod_only: String,
     pub member_left: String,
     pub action_failed: String,
-    pub setup_done: String,
     pub roles_title: String,
     pub roles_description: String,
     pub roles_button: String,
@@ -64,6 +65,18 @@ pub struct GiftTexts {
     pub code_invalid: String,
     pub code_summary_title: String,
     pub code_summary: String,
+}
+
+/// Placeholders : `{missing}`, `{channel}`.
+#[derive(Debug, Deserialize)]
+pub struct SetupTexts {
+    pub saved: String,
+    pub posted: String,
+    pub verification_incomplete: String,
+    pub languages_empty: String,
+    pub language_unknown: String,
+    pub not_configured: String,
+    pub show_title: String,
 }
 
 /// Placeholders : `{id}`, `{emoji}`, `{name}`, `{next}`, `{every}`, `{before}`,
@@ -108,7 +121,7 @@ impl Texts {
     pub fn load(config: &Config) -> anyhow::Result<Self> {
         let path = std::env::var("MESSAGES_PATH").unwrap_or_else(|_| "messages.toml".into());
         Self::from_figment(Figment::new().merge(Toml::file(&path)), config)
-            .with_context(|| format!("textes invalides (fichier : {path})"))
+            .with_context(|| format!("invalid texts (file: {path})"))
     }
 
     fn from_figment(figment: Figment, config: &Config) -> anyhow::Result<Self> {
@@ -119,11 +132,11 @@ impl Texts {
 
     fn validate(&self, config: &Config) -> anyhow::Result<()> {
         if !self.lang.contains_key(DEFAULT_LANG) {
-            bail!("section `[lang.{DEFAULT_LANG}]` manquante");
+            bail!("missing section `[lang.{DEFAULT_LANG}]`");
         }
         for l in &config.languages {
             if !self.lang.contains_key(&l.key) {
-                bail!("section `[lang.{}]` manquante", l.key);
+                bail!("missing section `[lang.{}]`", l.key);
             }
         }
 
@@ -159,7 +172,7 @@ impl Texts {
         for (name, text, max) in checks {
             let len = text.chars().count();
             if len == 0 || len > max {
-                bail!("`{name}` : {len} caractères (attendu 1 à {max})");
+                bail!("`{name}`: {len} characters (expected 1 to {max})");
             }
         }
         Ok(())
@@ -197,7 +210,7 @@ pub(crate) mod tests {
     fn example_is_valid() {
         let t = texts(EXAMPLE).unwrap();
         for l in &config().languages {
-            assert!(t.has_lang(&l.key), "langue {} absente", l.key);
+            assert!(t.has_lang(&l.key), "missing language {}", l.key);
         }
     }
 

@@ -116,12 +116,12 @@ impl GiftApi {
             match self.try_once(fid, kid, code).await {
                 Ok(Attempt::Done(outcome)) => return outcome,
                 Ok(Attempt::Retry(wait)) => {
-                    debug!(fid, code, attempt, ?wait, "gift api : retry");
+                    debug!(fid, code, attempt, ?wait, "gift api: retry");
                     self.push_slot(wait).await;
                     last_error = "throttled".into();
                 }
                 Err(e) => {
-                    warn!(fid, code, attempt, "gift api : {e}");
+                    warn!(fid, code, attempt, "gift api: {e}");
                     self.push_slot(Duration::from_secs(5 * attempt as u64)).await;
                     last_error = e.to_string();
                 }

@@ -4,13 +4,14 @@ use poise::serenity_prelude::{
     CreateButton, CreateChannel, CreateEmbed, CreateInputText, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, CreateModal, CreateSelectMenu,
     CreateSelectMenuKind, EditInteractionResponse, EditMember,
-    InputTextStyle, Member, Mentionable, Message, ModalInteraction, PermissionOverwrite,
+    GuildId, InputTextStyle, Member, Mentionable, Message, ModalInteraction, PermissionOverwrite,
     PermissionOverwriteType, Permissions, ReactionType, RoleId, UserId,
 };
 use tracing::{info, warn};
 
 use crate::{
     Data, Error,
+    settings::Verification,
     texts::{DEFAULT_LANG, Lang},
 };
 
@@ -45,20 +46,25 @@ pub fn handles(custom_id: &str) -> bool {
     custom_id.starts_with(PREFIX)
 }
 
-/// Message de #verification, posté par `/setup-verification`.
+/// Message du salon de vérification, posté par `/setup verification`.
 pub fn verification_message(data: &Data) -> CreateMessage {
     let en = data.texts.lang(DEFAULT_LANG);
-    let options = data.config.languages.iter().map(|l| l.select_option(false)).collect();
+    let mut rows = vec![CreateActionRow::Buttons(vec![start_button(DEFAULT_LANG, en)])];
+    // Menu de traduction, s'il y a d'autres langues que l'anglais.
+    if !data.config.languages.is_empty() {
+        let options = data.config.languages.iter().map(|l| l.select_option(false)).collect();
+        rows.push(CreateActionRow::SelectMenu(
+            CreateSelectMenu::new(ID_LANG, CreateSelectMenuKind::String { options })
+                .placeholder(&en.lang_placeholder),
+        ));
+    }
+    CreateMessage::new().embed(verif_embed(en)).components(rows)
+}
 
-    CreateMessage::new()
-        .embed(verif_embed(en))
-        .components(vec![
-            CreateActionRow::Buttons(vec![start_button(DEFAULT_LANG, en)]),
-            CreateActionRow::SelectMenu(
-                CreateSelectMenu::new(ID_LANG, CreateSelectMenuKind::String { options })
-                    .placeholder(&en.lang_placeholder),
-            ),
-        ])
+/// Réglages de vérification du serveur de l'interaction.
+fn settings(data: &Data, guild: Option<GuildId>) -> Option<(GuildId, Verification)> {
+    let guild = guild?;
+    Some((guild, data.guilds.get(guild).verification?))
 }
 
 pub async fn on_component(
@@ -66,13 +72,20 @@ pub async fn on_component(
     data: &Data,
     i: &ComponentInteraction,
 ) -> Result<(), Error> {
+    if i.data.custom_id == ID_LANG {
+        return on_lang_select(ctx, data, i).await;
+    }
+    // Vérification désactivée sur ce serveur : boutons inertes.
+    let Some((guild, v)) = settings(data, i.guild_id) else {
+        i.create_response(ctx, CreateInteractionResponse::Acknowledge).await?;
+        return Ok(());
+    };
     match i.data.custom_id.as_str() {
-        ID_LANG => on_lang_select(ctx, data, i).await,
-        ID_VERIFIED => on_decision(ctx, data, i, Decision::Verified).await,
-        ID_GUEST => on_decision(ctx, data, i, Decision::Guest).await,
-        ID_REFUSE => on_decision(ctx, data, i, Decision::Refuse).await,
+        ID_VERIFIED => on_decision(ctx, data, guild, &v, i, Decision::Verified).await,
+        ID_GUEST => on_decision(ctx, data, guild, &v, i, Decision::Guest).await,
+        ID_REFUSE => on_decision(ctx, data, guild, &v, i, Decision::Refuse).await,
         id => match id.strip_prefix(ID_START) {
-            Some(rest) => on_start(ctx, data, i, lang_key(rest)).await,
+            Some(rest) => on_start(ctx, data, guild, &v, i, lang_key(rest)).await,
             None => Ok(()),
         },
     }
@@ -88,11 +101,11 @@ pub async fn on_modal(
     };
     let key = lang_key(rest);
     let lang = data.texts.lang(key);
-    let Some(member) = i.member.as_ref() else {
+    let (Some(member), Some((guild, v))) = (i.member.as_ref(), settings(data, i.guild_id)) else {
         return Ok(());
     };
 
-    if is_validated(data, &member.roles) {
+    if is_validated(&v, &member.roles) {
         i.create_response(ctx, CreateInteractionResponse::Acknowledge).await?;
         return Ok(());
     }
@@ -108,16 +121,16 @@ pub async fn on_modal(
         return Ok(i.create_response(ctx, ephemeral(&lang.invalid_kingdom)).await?);
     }
     // Double soumission (deux modals ouverts en parallèle).
-    if let Some(ch) = find_pending_channel(ctx, data, member.user.id) {
+    if let Some(ch) = find_pending_channel(ctx, guild, &v, member.user.id) {
         let msg = lang.pending_exists.replace("{channel}", &ch.mention().to_string());
         return Ok(i.create_response(ctx, ephemeral(&msg)).await?);
     }
 
     i.defer_ephemeral(ctx).await?;
     let ticket = Ticket { name, alliance, kingdom, lang_key: key };
-    match create_ticket(ctx, data, member, &ticket, lang).await {
+    match create_ticket(ctx, data, guild, &v, member, &ticket, lang).await {
         Ok(ch) => {
-            info!(user = %member.user.id, lang = key, channel = %ch, "demande de vérif créée");
+            info!(%guild, user = %member.user.id, lang = key, channel = %ch, "verification request created");
             let msg = lang.request_created.replace("{channel}", &ch.mention().to_string());
             i.edit_response(ctx, EditInteractionResponse::new().content(msg)).await?;
             Ok(())
@@ -131,26 +144,23 @@ pub async fn on_modal(
 }
 
 /// Le membre a déjà Verified ou Guest.
-pub fn is_validated(data: &Data, roles: &[RoleId]) -> bool {
-    let r = &data.config.roles;
-    roles.contains(&r.verified) || roles.contains(&r.guest)
+pub fn is_validated(v: &Verification, roles: &[RoleId]) -> bool {
+    roles.contains(&v.verified) || roles.contains(&v.guest)
 }
 
 /// Salon de vérif ouvert pour ce membre (lu dans le cache, via le topic).
 pub fn find_pending_channel(
     ctx: &serenity::Context,
-    data: &Data,
+    guild: GuildId,
+    v: &Verification,
     user_id: UserId,
 ) -> Option<ChannelId> {
     let topic = topic_for(user_id);
-    let guild = ctx.cache.guild(data.config.guild_id)?;
+    let guild = ctx.cache.guild(guild)?;
     guild
         .channels
         .values()
-        .find(|c| {
-            c.parent_id == Some(data.config.verif_category)
-                && c.topic.as_deref() == Some(topic.as_str())
-        })
+        .find(|c| c.parent_id == Some(v.category) && c.topic.as_deref() == Some(topic.as_str()))
         .map(|c| c.id)
 }
 
@@ -180,6 +190,8 @@ async fn on_lang_select(
 async fn on_start(
     ctx: &serenity::Context,
     data: &Data,
+    guild: GuildId,
+    v: &Verification,
     i: &ComponentInteraction,
     key: &str,
 ) -> Result<(), Error> {
@@ -187,13 +199,13 @@ async fn on_start(
         return Ok(());
     };
     // Déjà vérifié : on acquitte sans rien afficher.
-    if is_validated(data, &member.roles) {
+    if is_validated(v, &member.roles) {
         i.create_response(ctx, CreateInteractionResponse::Acknowledge).await?;
         return Ok(());
     }
 
     let lang = data.texts.lang(key);
-    if let Some(ch) = find_pending_channel(ctx, data, member.user.id) {
+    if let Some(ch) = find_pending_channel(ctx, guild, v, member.user.id) {
         let msg = lang.pending_exists.replace("{channel}", &ch.mention().to_string());
         return Ok(i.create_response(ctx, ephemeral(&msg)).await?);
     }
@@ -217,11 +229,12 @@ struct Ticket<'a> {
 async fn create_ticket(
     ctx: &serenity::Context,
     data: &Data,
+    guild: GuildId,
+    v: &Verification,
     member: &Member,
     t: &Ticket<'_>,
     lang: &Lang,
 ) -> Result<ChannelId, Error> {
-    let cfg = &data.config;
     let c = &data.texts.common;
     let user_id = member.user.id;
     let bot_id = ctx.cache.current_user().id;
@@ -235,30 +248,25 @@ async fn create_ticket(
         PermissionOverwrite {
             allow: Permissions::empty(),
             deny: Permissions::VIEW_CHANNEL,
-            kind: PermissionOverwriteType::Role(cfg.guild_id.everyone_role()),
+            kind: PermissionOverwriteType::Role(guild.everyone_role()),
         },
         allow(access, PermissionOverwriteType::Member(user_id)),
-        allow(access, PermissionOverwriteType::Role(cfg.roles.moderator)),
+        allow(access, PermissionOverwriteType::Role(v.moderator)),
         allow(access | Permissions::EMBED_LINKS, PermissionOverwriteType::Member(bot_id)),
     ];
 
-    let channel = cfg
-        .guild_id
+    let channel = guild
         .create_channel(
             ctx,
             CreateChannel::new(channel_name(t.name, user_id))
                 .kind(ChannelType::Text)
-                .category(cfg.verif_category)
+                .category(v.category)
                 .topic(topic_for(user_id))
                 .permissions(overwrites),
         )
         .await?;
 
-    let lang_label = cfg
-        .languages
-        .iter()
-        .find(|l| l.key == t.lang_key)
-        .map_or("English", |l| l.label.as_str());
+    let lang_label = data.config.language(t.lang_key).map_or("English", |l| l.label.as_str());
 
     // Le champ 0 (pseudo) est relu par `recap_name` au moment de la validation.
     let recap = CreateEmbed::new()
@@ -279,7 +287,7 @@ async fn create_ticket(
     let mut content = format!(
         "{} {}\n{}",
         user_id.mention(),
-        cfg.roles.moderator.mention(),
+        v.moderator.mention(),
         lang.ticket_intro
     );
     // Version anglaise en petit sous la traduction, pour les modos.
@@ -295,7 +303,7 @@ async fn create_ticket(
         .allowed_mentions(
             CreateAllowedMentions::new()
                 .users([user_id])
-                .roles([cfg.roles.moderator]),
+                .roles([v.moderator]),
         );
 
     if let Err(e) = channel.id.send_message(ctx, msg).await {
@@ -311,17 +319,18 @@ async fn create_ticket(
 async fn on_decision(
     ctx: &serenity::Context,
     data: &Data,
+    guild: GuildId,
+    v: &Verification,
     i: &ComponentInteraction,
     decision: Decision,
 ) -> Result<(), Error> {
-    let cfg = &data.config;
     let c = &data.texts.common;
 
-    let is_mod = i.member.as_ref().is_some_and(|m| m.roles.contains(&cfg.roles.moderator));
+    let is_mod = i.member.as_ref().is_some_and(|m| m.roles.contains(&v.moderator));
     if !is_mod {
         return Ok(i.create_response(ctx, ephemeral(&c.mod_only)).await?);
     }
-    let Some(user_id) = ticket_owner(ctx, data, i.channel_id) else {
+    let Some(user_id) = ticket_owner(ctx, guild, v, i.channel_id) else {
         i.create_response(ctx, CreateInteractionResponse::Acknowledge).await?;
         return Ok(());
     };
@@ -332,13 +341,13 @@ async fn on_decision(
             i.channel_id.delete(ctx).await?;
             return Ok(());
         }
-        Decision::Verified => cfg.roles.verified,
-        Decision::Guest => cfg.roles.guest,
+        Decision::Verified => v.verified,
+        Decision::Guest => v.guest,
     };
 
     i.defer_ephemeral(ctx).await?;
 
-    let member = match cfg.guild_id.member(ctx, user_id).await {
+    let member = match guild.member(ctx, user_id).await {
         Ok(m) => m,
         Err(_) => {
             i.edit_response(ctx, EditInteractionResponse::new().content(&c.member_left)).await?;
@@ -356,10 +365,10 @@ async fn on_decision(
     if let Some(name) = recap_name(&i.message) {
         edit = edit.nickname(name);
     }
-    if let Err(e) = cfg.guild_id.edit_member(ctx, user_id, edit).await {
+    if let Err(e) = guild.edit_member(ctx, user_id, edit).await {
         // Renommage impossible (owner, rôle au-dessus du bot…) : on donne au moins le rôle.
-        warn!(user = %user_id, "rôle + renommage impossible ({e}), rôle seul");
-        if let Err(e) = cfg.guild_id.edit_member(ctx, user_id, EditMember::new().roles(roles)).await {
+        warn!(%guild, user = %user_id, "cannot set role + nickname ({e}), role only");
+        if let Err(e) = guild.edit_member(ctx, user_id, EditMember::new().roles(roles)).await {
             i.edit_response(ctx, EditInteractionResponse::new().content(&c.action_failed)).await?;
             return Err(e.into());
         }
@@ -368,7 +377,7 @@ async fn on_decision(
     if let Some((name, alliance, kingdom)) = recap_info(&i.message)
         && let Err(e) = crate::db::upsert_member(&data.db, user_id.get(), name, alliance, kingdom).await
     {
-        warn!(user = %user_id, "enregistrement des infos de vérif : {e}");
+        warn!(user = %user_id, "saving verification info: {e}");
     }
     // La suite (welcome + suppression du salon) est faite par `members::on_update`.
     Ok(())
@@ -393,10 +402,15 @@ fn topic_for(user_id: UserId) -> String {
 }
 
 /// Propriétaire d'un salon de vérif, lu dans son topic.
-fn ticket_owner(ctx: &serenity::Context, data: &Data, channel_id: ChannelId) -> Option<UserId> {
-    let guild = ctx.cache.guild(data.config.guild_id)?;
+fn ticket_owner(
+    ctx: &serenity::Context,
+    guild: GuildId,
+    v: &Verification,
+    channel_id: ChannelId,
+) -> Option<UserId> {
+    let guild = ctx.cache.guild(guild)?;
     let channel = guild.channels.get(&channel_id)?;
-    if channel.parent_id != Some(data.config.verif_category) {
+    if channel.parent_id != Some(v.category) {
         return None;
     }
     let id = channel.topic.as_deref()?.strip_prefix("uid:")?.parse::<u64>().ok()?;

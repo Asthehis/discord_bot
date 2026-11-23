@@ -177,8 +177,10 @@ pub async fn active_codes(pool: &Pool) -> sqlx::Result<Vec<String>> {
 pub struct Redeemable {
     pub fid: i64,
     pub kingdom: i64,
-    /// Serveur d'inscription (`None` = principal).
+    /// Serveur d'inscription (`None` = inconnu : import).
     pub guild_id: Option<i64>,
+    pub discord_id: i64,
+    pub alliance: String,
 }
 
 /// Joueurs pour qui `code` reste à tenter, éventuellement limité à un `fid`.
@@ -189,7 +191,7 @@ pub async fn players_to_redeem(
 ) -> sqlx::Result<Vec<Redeemable>> {
     // Liste à garder alignée avec FINAL_STATUSES (vérifié par un test).
     sqlx::query_as(
-        "SELECT p.fid, p.kingdom, p.guild_id FROM players p
+        "SELECT p.fid, p.kingdom, p.guild_id, p.discord_id, p.alliance FROM players p
          LEFT JOIN redemptions r ON r.fid = p.fid AND r.code = ?
          WHERE (r.status IS NULL OR r.status NOT IN (
              'SUCCESS','RECEIVED','SAME_TYPE','CODE_INVALID','LEVEL_TOO_LOW',
@@ -243,7 +245,13 @@ mod tests {
         // ERROR est retenté, SUCCESS non.
         assert_eq!(
             players_to_redeem(&pool, "CODE", None).await.unwrap(),
-            vec![Redeemable { fid: 2, kingdom: 42, guild_id: Some(7) }]
+            vec![Redeemable {
+                fid: 2,
+                kingdom: 42,
+                guild_id: Some(7),
+                discord_id: 100,
+                alliance: "ABC".into()
+            }]
         );
         assert_eq!(players_to_redeem(&pool, "CODE", Some(1)).await.unwrap(), vec![]);
     }
@@ -285,7 +293,13 @@ mod tests {
         upsert_player(&pool, 1, 100, 43, "ABC", None).await.unwrap();
         assert_eq!(
             players_to_redeem(&pool, "CODE", None).await.unwrap(),
-            vec![Redeemable { fid: 1, kingdom: 43, guild_id: None }]
+            vec![Redeemable {
+                fid: 1,
+                kingdom: 43,
+                guild_id: None,
+                discord_id: 100,
+                alliance: "ABC".into()
+            }]
         );
     }
 
@@ -401,4 +415,86 @@ pub async fn delete_event(pool: &Pool, guild_id: u64, id: i64) -> sqlx::Result<b
         .execute(pool)
         .await?;
     Ok(res.rows_affected() > 0)
+}
+
+// --- guild settings -------------------------------------------------------
+
+/// Ligne de `guild_settings` (IDs en i64, convertis dans `settings`).
+#[derive(Debug, Default, Clone, sqlx::FromRow)]
+pub struct GuildRow {
+    pub guild_id: i64,
+    pub verif_channel: Option<i64>,
+    pub verif_category: Option<i64>,
+    pub role_verified: Option<i64>,
+    pub role_guest: Option<i64>,
+    pub role_moderator: Option<i64>,
+    pub welcome_channel: Option<i64>,
+    pub rules_channel: Option<i64>,
+    pub roles_channel: Option<i64>,
+    pub gift_channel: Option<i64>,
+    pub reminders: bool,
+}
+
+pub async fn guild_rows(pool: &Pool) -> sqlx::Result<Vec<GuildRow>> {
+    sqlx::query_as(
+        "SELECT guild_id, verif_channel, verif_category, role_verified, role_guest,
+                role_moderator, welcome_channel, rules_channel, roles_channel,
+                gift_channel, reminders
+         FROM guild_settings",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// (guild_id, lang_key, role_id), dans l'ordre d'ajout.
+pub async fn guild_languages(pool: &Pool) -> sqlx::Result<Vec<(i64, String, i64)>> {
+    sqlx::query_as("SELECT guild_id, lang_key, role_id FROM guild_languages ORDER BY rowid")
+        .fetch_all(pool)
+        .await
+}
+
+/// Remplace tous les réglages d'un serveur (ligne + langues).
+pub async fn save_guild(pool: &Pool, row: &GuildRow, languages: &[(String, i64)]) -> sqlx::Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT OR REPLACE INTO guild_settings
+           (guild_id, verif_channel, verif_category, role_verified, role_guest, role_moderator,
+            welcome_channel, rules_channel, roles_channel, gift_channel, reminders)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(row.guild_id)
+    .bind(row.verif_channel)
+    .bind(row.verif_category)
+    .bind(row.role_verified)
+    .bind(row.role_guest)
+    .bind(row.role_moderator)
+    .bind(row.welcome_channel)
+    .bind(row.rules_channel)
+    .bind(row.roles_channel)
+    .bind(row.gift_channel)
+    .bind(row.reminders)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM guild_languages WHERE guild_id = ?")
+        .bind(row.guild_id)
+        .execute(&mut *tx)
+        .await?;
+    for (key, role) in languages {
+        sqlx::query("INSERT INTO guild_languages (guild_id, lang_key, role_id) VALUES (?, ?, ?)")
+            .bind(row.guild_id)
+            .bind(key)
+            .bind(role)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await
+}
+
+/// Joueurs sans serveur d'inscription (avant le multi-serveur, import) → `guild`.
+pub async fn assign_unowned_players(pool: &Pool, guild: u64) -> sqlx::Result<u64> {
+    let res = sqlx::query("UPDATE players SET guild_id = ? WHERE guild_id IS NULL")
+        .bind(guild as i64)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
 }

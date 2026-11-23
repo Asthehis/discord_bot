@@ -24,22 +24,22 @@ fn parse_args(args: &[String]) -> anyhow::Result<Args> {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         if arg == "--map" {
-            let pair = it.next().context("--map attend ANCIEN=NOUVEAU")?;
-            let (old, new) = pair.split_once('=').context("--map attend ANCIEN=NOUVEAU")?;
+            let pair = it.next().context("--map expects OLD=NEW")?;
+            let (old, new) = pair.split_once('=').context("--map expects OLD=NEW")?;
             map.insert(old.trim().to_lowercase(), new.trim().to_string());
         } else {
             positional.push(arg.clone());
         }
     }
     let [users, alliances] = <[String; 2]>::try_from(positional).map_err(|_| {
-        anyhow::anyhow!("usage : import <users.sqlite> <alliance.sqlite> [--map ANCIEN=NOUVEAU]...")
+        anyhow::anyhow!("usage: import <users.sqlite> <alliance.sqlite> [--map OLD=NEW]...")
     })?;
     Ok(Args { users, alliances, map })
 }
 
 async fn open_readonly(path: &str) -> anyhow::Result<sqlx::SqlitePool> {
     if !std::path::Path::new(path).exists() {
-        bail!("fichier introuvable : {path}");
+        bail!("file not found: {path}");
     }
     let opts = SqliteConnectOptions::new().filename(path).read_only(true);
     Ok(SqlitePoolOptions::new().max_connections(1).connect_with(opts).await?)

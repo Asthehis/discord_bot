@@ -1,37 +1,25 @@
-guild_id = 0
-verif_category = 0
-# Fichier SQLite (monter un PVC sur /data en prod).
+# Config globale du bot. Tout ce qui dépend d'un serveur (salons, rôles, fonctionnalités)
+# se règle sur Discord avec /setup et est stocké en base.
+
+# Fichier SQLite.
 database_path = "data/bot.db"
+# Copie des logs du bot (tous serveurs). Supprimer la ligne pour désactiver.
+# logs_channel = 123456789012345678
 
-[roles]
-verified = 0
-guest = 0
-moderator = 0
-
-[channels]
-verification = 0
-general_chat = 0
-rules = 0
-roles = 0
-gift_codes = 0
-# Copie des logs du bot (admins uniquement). Supprimer la ligne pour désactiver.
-logs = 0
-
+# Langues proposées pour la vérification et le menu des rôles (textes dans messages.toml).
+# Le rôle de chaque langue se choisit par serveur : /setup language.
 [[languages]]
 key = "fr"
 label = "Français"
-role_id = 0
 emoji = "🇫🇷"
 
 [[languages]]
 key = "ar"
 label = "العربية"
-role_id = 0
 
 [[languages]]
 key = "tr"
 label = "Türkçe"
-role_id = 0
 emoji = "🇹🇷"
 
 [gift]
@@ -43,6 +31,7 @@ encrypt_key = "mN4!pQs6JrYwV9"
 url = "http://ks-gift-code-api.whiteout-bot.com/giftcode_api.php"
 key = "super_secret_bot_token_nobody_will_ever_find"
 
+# Alliances proposées par /register ; kingdom = royaume utilisé pour réclamer les codes.
 [[alliances]]
 tag = "ABC"
 name = "Alliance ABC"
@@ -52,12 +41,3 @@ kingdom = 1234
 tag = "XYZ"
 name = "Alliance XYZ"
 kingdom = 1234
-
-# Serveurs annexes (ex. serveur d'une alliance). Vérification et rôles restent sur guild_id.
-# Pour avoir /event sur le serveur principal : une entrée avec son id et reminders = true.
-[[guilds]]
-id = 1
-# /event (rappels d'events)
-reminders = true
-# Salon des codes de ce serveur : détection + résumés ; active /register et /unregister.
-gift_codes = 2

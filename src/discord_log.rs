@@ -146,7 +146,7 @@ pub fn spawn_sender(http: Arc<Http>, channel: ChannelId, mut rx: LogReceiver) {
                 let msg = CreateMessage::new().content(format!("```\n{chunk}\n```"));
                 if let Err(e) = channel.send_message(&*http, msg).await {
                     // Filtré par `filter()` : ne repart pas vers Discord.
-                    tracing::warn!("envoi des logs vers Discord : {e}");
+                    tracing::warn!("sending logs to Discord: {e}");
                 }
             }
             buf.clear();

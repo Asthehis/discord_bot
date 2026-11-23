@@ -77,7 +77,7 @@ fn message_codes(msg: &Message) -> Vec<String> {
 pub async fn on_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> Result<(), Error> {
     let is_gift_channel = msg
         .guild_id
-        .and_then(|g| data.config.gift_channel(g))
+        .and_then(|g| data.guilds.get(g).gift_channel)
         .is_some_and(|c| c == msg.channel_id);
     if !is_gift_channel {
         return Ok(());
@@ -90,7 +90,7 @@ pub async fn on_message(ctx: &serenity::Context, data: &Data, msg: &Message) -> 
 
     for code in message_codes(msg) {
         if db::insert_code(&data.db, &code, "channel").await? {
-            info!(code, "nouveau code détecté dans le salon");
+            info!(code, "new code found in the channel");
             let _ = data.jobs.send(Job::Code { code, origin: Some((msg.channel_id, msg.id)) });
         } else {
             react(&ctx.http, (msg.channel_id, msg.id), "🔁").await;
@@ -110,7 +110,7 @@ struct ShareResponse {
 /// Interroge l'API communautaire toutes les 5 à 10 min (lecture seule).
 pub fn spawn_share_api_poller(data: Data) {
     let Some(api) = &data.config.gift.share_api else {
-        info!("API de partage désactivée");
+        info!("share API disabled");
         return;
     };
     let (url, key) = (api.url.clone(), api.key.clone());
@@ -118,22 +118,22 @@ pub fn spawn_share_api_poller(data: Data) {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .expect("client HTTP");
+            .expect("HTTP client");
         loop {
             match fetch_share_api(&http, &url, &key).await {
                 Ok(codes) => {
                     for code in codes {
                         match db::insert_code(&data.db, &code, "share_api").await {
                             Ok(true) => {
-                                info!(code, "nouveau code depuis l'API de partage");
+                                info!(code, "new code from the share API");
                                 let _ = data.jobs.send(Job::Code { code, origin: None });
                             }
                             Ok(false) => {}
-                            Err(e) => error!("insertion code {code} : {e}"),
+                            Err(e) => error!("inserting code {code}: {e}"),
                         }
                     }
                 }
-                Err(e) => warn!("API de partage : {e:#}"),
+                Err(e) => warn!("share API: {e:#}"),
             }
             let jitter = (now_secs() * 7919) % SHARE_API_JITTER;
             tokio::time::sleep(Duration::from_secs(SHARE_API_MIN_INTERVAL + jitter)).await;
@@ -165,7 +165,7 @@ pub fn spawn_worker(http: Arc<Http>, data: Data, mut rx: JobReceiver) {
                     run_code(&http, &data, &code, None, None).await;
                 }
             }
-            Err(e) => error!("reprise des codes : {e}"),
+            Err(e) => error!("resuming codes: {e}"),
         }
 
         while let Some(job) = rx.recv().await {
@@ -177,7 +177,7 @@ pub fn spawn_worker(http: Arc<Http>, data: Data, mut rx: JobReceiver) {
                             run_code(&http, &data, &code, None, Some(fid)).await;
                         }
                     }
-                    Err(e) => error!("codes pour {fid} : {e}"),
+                    Err(e) => error!("codes for {fid}: {e}"),
                 },
             }
         }
@@ -200,7 +200,7 @@ async fn run_code(
     only_fid: Option<i64>,
 ) {
     if let Err(e) = try_run_code(http, data, code, origin, only_fid).await {
-        error!(code, "réclamation : {e:#}");
+        error!(code, "redeeming: {e:#}");
     }
 }
 
@@ -219,20 +219,17 @@ async fn try_run_code(
 
     let mut known_valid = db::code_status(pool, code).await?.as_deref() == Some("valid");
     // Par serveur d'inscription : chaque salon des codes a son propre résumé.
-    let mut stats: HashMap<GuildId, Stats> = HashMap::new();
+    let mut stats: HashMap<Option<GuildId>, Stats> = HashMap::new();
 
-    for db::Redeemable { fid, kingdom: kid, guild_id } in players {
-        // Serveur sans salon des codes (retiré de la config) : compté sur le principal.
-        let guild = guild_id
-            .map(|g| GuildId::new(g as u64))
-            .filter(|&g| data.config.gift_channel(g).is_some())
-            .unwrap_or(data.config.guild_id);
+    for db::Redeemable { fid, kingdom: kid, guild_id, discord_id, alliance } in players {
+        // Joueur sans serveur (import) : compté dans aucun résumé.
+        let guild = guild_id.map(|g| GuildId::new(g as u64));
         let outcome = data.gift_api.redeem(fid, kid, code).await;
 
         if let Outcome::CodeInvalid(reason) = outcome {
             // Un code « valide » qui devient invalide (expiré, épuisé) : on arrête là.
             db::set_code_status(pool, code, "invalid", Some(reason.as_str())).await?;
-            info!(code, reason = reason.as_str(), "code inutilisable");
+            info!(code, reason = reason.as_str(), "code not usable");
             if !known_valid {
                 announce_invalid(http, data, code, reason, origin).await;
             }
@@ -242,7 +239,7 @@ async fn try_run_code(
         if outcome.proves_code_valid() && !known_valid {
             known_valid = true;
             db::set_code_status(pool, code, "valid", None).await?;
-            info!(code, "code valide, réclamation pour tous");
+            info!(code, "valid code, redeeming for everyone");
             if let Some(o) = origin {
                 react(http, o, "✅").await;
             }
@@ -254,19 +251,46 @@ async fn try_run_code(
             Outcome::AlreadyReceived | Outcome::SameType => stats.already += 1,
             Outcome::Error(e) if e.contains("sign") => {
                 // Clé de signature invalide : inutile de continuer.
-                error!("signature refusée, vérifier gift.encrypt_key");
+                error!("signature rejected, check gift.encrypt_key");
                 db::record_redemption(pool, fid, code, outcome.as_db()).await?;
                 return Ok(());
             }
-            _ => stats.failed += 1,
+            _ => {
+                stats.failed += 1;
+                warn!(
+                    code,
+                    fid,
+                    kingdom = kid,
+                    alliance,
+                    user = discord_id,
+                    status = outcome.as_db(),
+                    "redeem failed"
+                );
+            }
         }
         db::record_redemption(pool, fid, code, outcome.as_db()).await?;
     }
 
+    let total = stats.values().fold(Stats::default(), |t, s| Stats {
+        success: t.success + s.success,
+        already: t.already + s.already,
+        failed: t.failed + s.failed,
+    });
+    if total.success + total.already + total.failed > 0 {
+        info!(
+            code,
+            redeemed = total.success,
+            already = total.already,
+            failed = total.failed,
+            player = only_fid,
+            "code claimed"
+        );
+    }
+
     // Résumé uniquement pour une vraie passe sur tout le monde.
     if only_fid.is_none() && known_valid {
-        for (guild, channel) in data.config.gift_channels() {
-            if let Some(s) = stats.get(&guild).filter(|s| s.success + s.already + s.failed > 0) {
+        for (guild, channel) in data.guilds.gift_channels() {
+            if let Some(s) = stats.get(&Some(guild)).filter(|s| s.success + s.already + s.failed > 0) {
                 post_summary(http, data, code, s, channel).await;
             }
         }
@@ -291,7 +315,7 @@ async fn announce_invalid(
         .replace("{code}", code)
         .replace("{reason}", reason.as_str());
     if let Err(e) = o.0.send_message(http, CreateMessage::new().content(text)).await {
-        warn!("annonce code invalide : {e}");
+        warn!("announcing invalid code: {e}");
     }
 }
 
@@ -307,14 +331,14 @@ async fn post_summary(http: &Http, data: &Data, code: &str, s: &Stats, channel: 
         )
         .color(EMBED_COLOR);
     if let Err(e) = channel.send_message(http, CreateMessage::new().embed(embed)).await {
-        warn!("résumé du code {code} : {e}");
+        warn!("summary for code {code}: {e}");
     }
 }
 
 async fn react(http: &Http, (channel, message): (ChannelId, MessageId), emoji: &str) {
     let reaction = ReactionType::Unicode(emoji.to_string());
     if let Err(e) = channel.create_reaction(http, message, reaction).await {
-        warn!("réaction {emoji} : {e}");
+        warn!("reaction {emoji}: {e}");
     }
 }
 

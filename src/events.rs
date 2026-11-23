@@ -215,7 +215,7 @@ fn format_utc(ts: i64) -> String {
 
 /// Serveur courant, s'il a les rappels activés.
 fn reminder_guild(ctx: Context<'_>) -> Option<GuildId> {
-    ctx.guild_id().filter(|&g| ctx.data().config.reminders_enabled(g))
+    ctx.guild_id().filter(|&g| ctx.data().guilds.get(g).reminders)
 }
 
 async fn reply(ctx: Context<'_>, content: impl Into<String>) -> Result<(), Error> {
@@ -304,7 +304,7 @@ async fn add(
         },
     )
     .await?;
-    info!(%guild, id, name, user = %ctx.author().id, "rappel créé");
+    info!(%guild, id, name, user = %ctx.author().id, "reminder created");
 
     let next = occurrence_after(first_start, interval, now)
         .map_or_else(|| "—".into(), |s| format!("<t:{s}:F> (<t:{s}:R>)"));
@@ -387,7 +387,7 @@ async fn skip(
     } else {
         db::set_last_notified(&data.db, id, skipped).await?;
     }
-    info!(%guild, id, skipped, user = %ctx.author().id, "occurrence sautée");
+    info!(%guild, id, skipped, user = %ctx.author().id, "occurrence skipped");
 
     let following = occurrence_after(e.first_start, e.interval_secs, skipped)
         .map_or_else(|| "—".into(), |s| format!("<t:{s}:F> (<t:{s}:R>)"));
@@ -416,7 +416,7 @@ async fn remove(
         return reply(ctx, &t.not_found).await;
     };
     db::delete_event(&data.db, guild.get(), id).await?;
-    info!(%guild, id, name = e.name, user = %ctx.author().id, "rappel supprimé");
+    info!(%guild, id, name = e.name, user = %ctx.author().id, "reminder deleted");
     let text = t.removed.replace("{id}", &id.to_string()).replace("{name}", &e.name);
     reply(ctx, text).await
 }
@@ -450,7 +450,7 @@ pub fn spawn_scheduler(http: Arc<serenity::Http>, data: Data) {
         loop {
             tick.tick().await;
             if let Err(e) = run_due(&http, &data).await {
-                error!("rappels : {e:#}");
+                error!("reminders: {e:#}");
             }
         }
     });
@@ -467,15 +467,15 @@ async fn run_due(http: &serenity::Http, data: &Data) -> anyhow::Result<()> {
             db::set_last_notified(&data.db, e.id, start).await?;
         }
         if now > start + GRACE {
-            info!(id = e.id, name = e.name, start, "rappel manqué (bot hors ligne), ignoré");
+            info!(id = e.id, name = e.name, start, "reminder missed (bot offline), skipped");
             continue;
         }
         let msg = CreateMessage::new()
             .content(render_reminder(&data.texts.events, &e, start))
             .allowed_mentions(CreateAllowedMentions::new().roles(e.role()));
         match e.channel().send_message(http, msg).await {
-            Ok(_) => info!(id = e.id, name = e.name, "rappel envoyé"),
-            Err(err) => warn!(id = e.id, name = e.name, channel = e.channel_id, "rappel non envoyé : {err}"),
+            Ok(_) => info!(id = e.id, name = e.name, "reminder sent"),
+            Err(err) => warn!(id = e.id, name = e.name, channel = e.channel_id, "reminder not sent: {err}"),
         }
     }
     Ok(())

@@ -3,7 +3,13 @@
 Bot Discord en Rust (poise + serenity) pour l'onboarding d'un serveur de jeu.
 
 ## Fonctionnement
-- `#verification` : message avec un bouton "Commencer la vérification" (posté via `/setup-verification`)
+Multi-serveur : chaque fonctionnalité s'active par serveur avec `/setup` (Administrateur),
+réglages en base (`guild_settings`, `guild_languages`, cache mémoire dans `settings::Store`).
+Commandes enregistrées par serveur (au `GuildCreate` et après chaque `/setup`) : `/setup`
+partout, `/register` + `/unregister` si salon des codes, `/event` si rappels actifs.
+
+- `/setup verification` (salon, catégorie, rôles Verified/Guest/Mod, salons welcome/règles) :
+  poste le message avec le bouton de vérification
 - Clic → modal (pseudo, alliance, royaume) → salon privé `#verif-<pseudo>` (membre + Mod + bot),
   topic `uid:<id>`, embed récap + boutons Verified / Guest / Refuser (Mod only)
 - Validation : rôle donné + renommage en `Pseudo` (sans préfixe)
@@ -11,27 +17,31 @@ Bot Discord en Rust (poise + serenity) pour l'onboarding d'un serveur de jeu.
   (le même pour les deux), puis suppression du salon (sans transcript)
 - Refus : suppression du salon uniquement, pas de kick
 - `guild_member_removal` : supprime le salon de vérif s'il existe
-- `/setup-roles` : bouton → menu éphémère pré-coché des langues (extensible via la config)
-- `/register id alliance` : lie un ou plusieurs Governor ID à un compte Discord (kingdom = celui
-  de l'alliance dans la config), vérifié auprès du jeu ; `/unregister`
-- Codes cadeaux : détectés dans `channels.gift_codes` (y compris annonces suivies) et via
-  l'API communautaire de partage (lecture seule) → réclamés pour tous les joueurs par un
-  worker unique, résumé posté dans chaque salon des codes (chiffres des joueurs inscrits depuis
-  ce serveur : `players.guild_id`, NULL = principal)
-- `/event add|list|skip|remove` (Gérer le serveur) : rappels d'events du jeu (modèles Bear Trap,
-  Viking…, ou Custom), heures UTC, récurrence + délai avant ; tâche toutes les 30 s, anti-doublon
-  via `last_notified`.
-- Multi-serveur : `[[guilds]]` (id, `reminders`, `gift_codes`) active `/event` et/ou les codes
-  (`/register`, salon des codes) sur d'autres serveurs ; vérif et rôles restent sur `guild_id`.
-  Commandes enregistrées par serveur au `GuildCreate`
+- `/setup language` (langue du catalogue → rôle) + `/setup languages` (salon) : bouton → menu
+  éphémère pré-coché des langues du serveur
+- `/setup gift-codes` : salon des codes du serveur ; `/register id alliance` lie un ou plusieurs
+  Governor ID à un compte Discord (kingdom = celui de l'alliance dans la config), vérifié auprès
+  du jeu ; `/unregister`
+- Codes cadeaux : détectés dans les salons des codes (y compris annonces suivies) et via
+  l'API communautaire de partage (lecture seule) → réclamés pour tous les joueurs (pool commun)
+  par un worker unique, résumé posté dans chaque salon des codes avec les chiffres des joueurs
+  inscrits depuis ce serveur (`players.guild_id`)
+- `/setup reminders` puis `/event add|list|skip|remove` (Gérer le serveur) : rappels d'events
+  du jeu (modèles Bear Trap, Viking…, ou Custom), heures UTC, récurrence + délai avant ; tâche
+  toutes les 30 s, anti-doublon via `last_notified`
+- `/setup show|disable|post` : voir, désactiver, reposter les messages
 
 ## Contraintes
 - Vérification sans état : custom_ids fixes, lien membre ↔ salon dans le topic du salon
-- SQLite (sqlx, migrations dans `migrations/`) pour joueurs, codes, réclamations et infos
-  de vérif ; fichier sur un PVC → 1 seul replica
+- SQLite (sqlx, migrations dans `migrations/`) pour réglages des serveurs, joueurs, codes,
+  réclamations, rappels et infos de vérif ; 1 seule instance
 - Intents : GUILDS + GUILD_MEMBERS + GUILD_MESSAGES + MESSAGE_CONTENT (uniquement pour lire
-  le salon des codes). Cache serenity activé
-- Config en TOML/env (IDs, langues, alliances, clé de signature) ; textes dans `messages.toml`
+  les salons des codes). Cache serenity activé
+- `config.toml` = global uniquement (catalogue des langues, alliances, clé de signature, API de
+  partage, salon des logs). Les anciennes clés par serveur (`guild_id`, `roles`, `channels`,
+  `guilds`, `languages.role_id`) sont reprises en base au démarrage si le serveur n'y est pas
+  encore (`settings::import_legacy`), puis à supprimer
+- Textes dans `messages.toml` ; logs en anglais
 - Déployé sur la VM Oracle (x86_64) en Docker Compose, 1 seule instance, dans
   `/opt/docker/discord-verif-bot` (token dans `bot.env`, base dans `data/`, uid 10001)
 - CI GitHub Actions sur tag `v*` : clippy + tests → image `ghcr.io/<repo>:<version>`
